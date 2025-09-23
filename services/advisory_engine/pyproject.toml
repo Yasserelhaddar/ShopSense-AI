@@ -1,0 +1,32 @@
+[project]
+name = "shopsense-advisory"
+version = "1.0.0"
+description = "Advisory Engine - User-facing recommendations and consultation for ShopSense-AI"
+authors = [
+    {name = "ShopSense-AI Team", email = "team@shopsense-ai.com"}
+]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "httpx>=0.25.0",
+    "openai>=1.0.0",
+    "redis>=5.0.0",
+    "pydantic>=2.0.0",
+    "jinja2>=3.1.0",
+    "python-multipart>=0.0.6",
+    "core",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
