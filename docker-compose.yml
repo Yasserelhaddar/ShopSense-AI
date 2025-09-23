@@ -1,0 +1,239 @@
+version: '3.8'
+
+services:
+  # =================================
+  # ShopSense-AI Microservices
+  # =================================
+
+  knowledge-service:
+    build: ./services/knowledge_engine
+    container_name: shopsense-knowledge
+    ports:
+      - "8001:8001"
+    environment:
+      # Service Configuration
+      - KNOWLEDGE_PORT=8001
+      - KNOWLEDGE_DEBUG=false
+      - KNOWLEDGE_LOG_LEVEL=INFO
+      - KNOWLEDGE_ENVIRONMENT=development
+
+      # Model Storage
+      - KNOWLEDGE_MODEL_STORAGE_PATH=/models
+
+      # External APIs (Set these in your .env file)
+      - KNOWLEDGE_OPENAI_API_KEY=${KNOWLEDGE_OPENAI_API_KEY}
+      - KNOWLEDGE_HF_TOKEN=${KNOWLEDGE_HF_TOKEN}
+      - KNOWLEDGE_WANDB_API_KEY=${KNOWLEDGE_WANDB_API_KEY}
+      - KNOWLEDGE_WANDB_PROJECT=shopsense-training
+      - KNOWLEDGE_WANDB_ENTITY=shopsense-team
+
+      # Training Configuration
+      - KNOWLEDGE_BASE_MODEL=mistralai/Mistral-7B-Instruct-v0.2
+      - KNOWLEDGE_MAX_LENGTH=2048
+      - KNOWLEDGE_BATCH_SIZE=1
+      - KNOWLEDGE_LEARNING_RATE=2e-4
+      - KNOWLEDGE_MAX_EPOCHS=3
+
+      # AWS S3 Configuration (Optional for production)
+      - KNOWLEDGE_AWS_ACCESS_KEY_ID=${KNOWLEDGE_AWS_ACCESS_KEY_ID:-}
+      - KNOWLEDGE_AWS_SECRET_ACCESS_KEY=${KNOWLEDGE_AWS_SECRET_ACCESS_KEY:-}
+      - KNOWLEDGE_S3_BUCKET=shopsense-models
+      - KNOWLEDGE_S3_REGION=us-east-1
+    volumes:
+      - knowledge_models:/models
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - shopsense-network
+
+  discovery-service:
+    build: ./services/discovery_engine
+    container_name: shopsense-discovery
+    ports:
+      - "8002:8002"
+    environment:
+      # Service Configuration
+      - DISCOVERY_PORT=8002
+      - DISCOVERY_DEBUG=false
+      - DISCOVERY_LOG_LEVEL=INFO
+      - DISCOVERY_ENVIRONMENT=development
+
+      # Vector Database
+      - DISCOVERY_QDRANT_URL=http://qdrant:6333
+      - DISCOVERY_QDRANT_COLLECTION=products
+      - DISCOVERY_QDRANT_VECTOR_SIZE=384
+
+      # Embedding Model
+      - DISCOVERY_EMBEDDING_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2
+      - DISCOVERY_EMBEDDING_VECTOR_SIZE=384
+
+      # External APIs (Set these in your .env file)
+      - DISCOVERY_APPIFY_API_KEY=${DISCOVERY_APPIFY_API_KEY}
+      - DISCOVERY_APPIFY_BASE_URL=https://api.appify.com/v1
+      - DISCOVERY_APPIFY_RATE_LIMIT=10
+
+      - DISCOVERY_BESTBUY_API_KEY=${DISCOVERY_BESTBUY_API_KEY:-}
+      - DISCOVERY_BESTBUY_BASE_URL=https://api.bestbuy.com/v1
+
+      - DISCOVERY_RAPIDAPI_KEY=${DISCOVERY_RAPIDAPI_KEY:-}
+      - DISCOVERY_RAPIDAPI_WALMART_URL=https://walmart-api.rapidapi.com
+      - DISCOVERY_RAPIDAPI_EBAY_URL=https://ebay-search-result.rapidapi.com
+
+      # Database Configuration
+      - DISCOVERY_POSTGRES_URL=postgresql://admin:password123@postgres:5432/shopsense
+      - DISCOVERY_REDIS_URL=redis://redis:6379
+
+      # Collection Configuration
+      - DISCOVERY_COLLECTION_BATCH_SIZE=100
+      - DISCOVERY_COLLECTION_INTERVAL_HOURS=1
+      - DISCOVERY_MAX_COLLECTION_RETRIES=3
+    depends_on:
+      - qdrant
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - shopsense-network
+
+  advisory-service:
+    build: ./services/advisory_engine
+    container_name: shopsense-advisory
+    ports:
+      - "8003:8003"
+    environment:
+      # Service Configuration
+      - ADVISORY_PORT=8003
+      - ADVISORY_DEBUG=false
+      - ADVISORY_LOG_LEVEL=INFO
+      - ADVISORY_ENVIRONMENT=development
+
+      # Service Dependencies
+      - ADVISORY_KNOWLEDGE_SERVICE_URL=http://knowledge-service:8001
+      - ADVISORY_DISCOVERY_SERVICE_URL=http://discovery-service:8002
+
+      # External APIs
+      - ADVISORY_OPENAI_API_KEY=${ADVISORY_OPENAI_API_KEY}
+      - ADVISORY_OPENAI_MODEL=gpt-3.5-turbo
+
+      # Cache Configuration
+      - ADVISORY_REDIS_URL=redis://redis:6379
+      - ADVISORY_CACHE_TTL_SECONDS=300
+
+      # Recommendation Configuration
+      - ADVISORY_MAX_RECOMMENDATIONS=10
+      - ADVISORY_RECOMMENDATION_TIMEOUT_SECONDS=30
+    depends_on:
+      - knowledge-service
+      - discovery-service
+      - redis
+    restart: unless-stopped
+    networks:
+      - shopsense-network
+
+  # =================================
+  # Database Services
+  # =================================
+
+  qdrant:
+    image: qdrant/qdrant:v1.7.0
+    container_name: shopsense-qdrant
+    ports:
+      - "6333:6333"
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+    networks:
+      - shopsense-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: shopsense-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=shopsense
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password123
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    restart: unless-stopped
+    networks:
+      - shopsense-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: shopsense-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - shopsense-network
+
+  # =================================
+  # Optional Monitoring (Uncomment to enable)
+  # =================================
+
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: shopsense-prometheus
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./infrastructure/prometheus.yml:/etc/prometheus/prometheus.yml
+  #     - prometheus_data:/prometheus
+  #   command:
+  #     - '--config.file=/etc/prometheus/prometheus.yml'
+  #     - '--storage.tsdb.path=/prometheus'
+  #     - '--web.console.libraries=/etc/prometheus/console_libraries'
+  #     - '--web.console.templates=/etc/prometheus/consoles'
+  #   networks:
+  #     - shopsense-network
+
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: shopsense-grafana
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - GF_SECURITY_ADMIN_PASSWORD=admin
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+  #   networks:
+  #     - shopsense-network
+
+# =================================
+# Networks and Volumes
+# =================================
+
+networks:
+  shopsense-network:
+    driver: bridge
+    name: shopsense-network
+
+volumes:
+  # Database volumes
+  qdrant_data:
+    name: shopsense_qdrant_data
+  postgres_data:
+    name: shopsense_postgres_data
+  redis_data:
+    name: shopsense_redis_data
+
+  # Application volumes
+  knowledge_models:
+    name: shopsense_knowledge_models
+
+  # Optional monitoring volumes
+  # prometheus_data:
+  #   name: shopsense_prometheus_data
+  # grafana_data:
+  #   name: shopsense_grafana_data
