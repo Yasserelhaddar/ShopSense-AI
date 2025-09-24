@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from core.logging import setup_logger
+from shared.logging import setup_logger
 from config.settings import DiscoverySettings
 from api.routes import router
 from core.collectors import CollectorManager
@@ -65,11 +65,16 @@ async def lifespan(app: FastAPI):
     embedding_processor = EmbeddingProcessor()
     await embedding_processor.initialize()
 
-    collector_manager = CollectorManager()
+    collector_manager = CollectorManager(storage_manager, embedding_processor)
     await collector_manager.initialize()
 
     # Start background tasks
     await start_background_tasks()
+
+    # Make managers available to routes through app state
+    app.state.collector_manager = collector_manager
+    app.state.embedding_processor = embedding_processor
+    app.state.storage_manager = storage_manager
 
     logger.info("Discovery Service ready!")
 
@@ -87,8 +92,8 @@ async def validate_configuration():
     Raises:
         ValueError: If required configuration is missing
     """
-    if not settings.appify_api_key:
-        raise ValueError("Appify API key is required")
+    if not settings.apify_api_key:
+        raise ValueError("Apify API key is required")
 
     if not settings.qdrant_url:
         raise ValueError("Qdrant URL is required")
@@ -100,11 +105,15 @@ async def start_background_tasks():
     """
     Start background data collection and monitoring tasks.
 
-    Initiates scheduled product collection, price monitoring,
-    and database maintenance tasks.
+    Initiates scheduled product collection (if hybrid mode), price monitoring,
+    and database maintenance tasks based on collection strategy.
     """
-    # Start product collection task
-    asyncio.create_task(scheduled_product_collection())
+    # Start product collection task only if in hybrid mode
+    if settings.collection_strategy == "hybrid":
+        asyncio.create_task(scheduled_product_collection())
+        logger.info(f"Scheduled collection enabled (strategy: {settings.collection_strategy})")
+    else:
+        logger.info(f"Scheduled collection disabled (strategy: {settings.collection_strategy})")
 
     # Start price monitoring task
     asyncio.create_task(scheduled_price_monitoring())
@@ -226,10 +235,7 @@ async def root():
     }
 
 
-# Make managers available to routes
-app.state.collector_manager = collector_manager
-app.state.embedding_processor = embedding_processor
-app.state.storage_manager = storage_manager
+# App state is set in lifespan function after initialization
 
 
 if __name__ == "__main__":

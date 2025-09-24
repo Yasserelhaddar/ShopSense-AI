@@ -16,7 +16,7 @@ from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Query, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 
-from core.logging import get_logger
+from shared.logging import get_logger
 from api.schemas import (
     ProductSearchRequest,
     ProductSearchResponse,
@@ -360,12 +360,12 @@ async def health_check(request: Request):
         except Exception as e:
             health_status["external_apis"]["qdrant"] = f"unhealthy: {str(e)}"
 
-        # Check Appify API
+        # Check Apify API
         try:
-            await collector_manager.test_appify_connection()
-            health_status["external_apis"]["appify"] = "healthy"
+            await collector_manager.test_apify_connection()
+            health_status["external_apis"]["apify"] = "healthy"
         except Exception as e:
-            health_status["external_apis"]["appify"] = f"unhealthy: {str(e)}"
+            health_status["external_apis"]["apify"] = f"unhealthy: {str(e)}"
 
         # Check Best Buy API
         try:

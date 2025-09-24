@@ -5,7 +5,6 @@ description = "Discovery Engine - Product data collection and search for ShopSen
 authors = [
     {name = "ShopSense-AI Team", email = "team@shopsense-ai.com"}
 ]
-readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
     "fastapi>=0.104.0",
@@ -20,12 +19,18 @@ dependencies = [
     "beautifulsoup4>=4.12.0",
     "pandas>=2.0.0",
     "numpy>=1.24.0",
-    "core",
+    "shared",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.uv.sources]
+shared = { path = "../../shared", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
 
 [tool.ruff]
 line-length = 88
