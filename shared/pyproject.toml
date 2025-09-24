@@ -1,0 +1,20 @@
+[project]
+name = "shared"
+version = "1.0.0"
+description = "Core shared utilities for ShopSense-AI microservices"
+authors = [
+    {name = "ShopSense-AI Team", email = "team@shopsense-ai.com"}
+]
+requires-python = ">=3.9"
+dependencies = [
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["shared"]

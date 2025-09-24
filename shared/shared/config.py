@@ -16,7 +16,8 @@ Usage:
 """
 
 from typing import Any, Dict, Optional
-from pydantic import BaseSettings as PydanticBaseSettings, validator
+from pydantic import field_validator
+from pydantic_settings import BaseSettings as PydanticBaseSettings
 
 
 class BaseSettings(PydanticBaseSettings):
@@ -41,26 +42,9 @@ class BaseSettings(PydanticBaseSettings):
         env_file = ".env"
         case_sensitive = False
 
-    @validator('*')
-    def validate_required_api_keys(cls, v: Any, field: Any) -> Any:
-        """
-        Validate that API key fields are not empty.
 
-        Args:
-            v: Field value
-            field: Field information
-
-        Returns:
-            Validated field value
-
-        Raises:
-            ValueError: If API key field is empty
-        """
-        if field.name.endswith('_api_key') and not v:
-            raise ValueError(f'{field.name} is required and cannot be empty')
-        return v
-
-    @validator('log_level')
+    @field_validator('log_level')
+    @classmethod
     def validate_log_level(cls, v: str) -> str:
         """
         Validate log level is one of the accepted values.
