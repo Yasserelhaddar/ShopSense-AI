@@ -8,7 +8,7 @@ Discovery Engine service for product search and data retrieval.
 import httpx
 from typing import List, Dict, Any, Optional
 
-from core.logging import get_logger
+from shared.logging import get_logger
 
 
 logger = get_logger("advisory-service")

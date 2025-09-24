@@ -7,7 +7,7 @@ Configuration is loaded from environment variables with the ADVISORY_ prefix.
 from typing import Optional
 from pydantic import Field
 
-from core.config import BaseSettings
+from shared.config import BaseSettings
 
 
 class AdvisorySettings(BaseSettings):

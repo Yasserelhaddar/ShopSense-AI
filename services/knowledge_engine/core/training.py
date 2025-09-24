@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from uuid import uuid4
 
-from core.logging import get_logger
+from shared.logging import get_logger
 from core.data import DatasetManager
 from config.settings import KnowledgeSettings
 

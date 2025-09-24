@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
-from core.logging import get_logger
+from shared.logging import get_logger
 from config.settings import KnowledgeSettings
 
 

@@ -8,7 +8,7 @@ personalized shopping consultation based on user conversations.
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-from core.logging import get_logger
+from shared.logging import get_logger
 
 
 logger = get_logger("advisory-service")

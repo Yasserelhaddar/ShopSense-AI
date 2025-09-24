@@ -11,7 +11,7 @@ Configuration is loaded from environment variables with the KNOWLEDGE_ prefix.
 from typing import Optional
 from pydantic import Field, validator
 
-from core.config import BaseSettings
+from shared.config import BaseSettings
 
 
 class KnowledgeSettings(BaseSettings):

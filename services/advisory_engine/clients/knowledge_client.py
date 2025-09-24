@@ -15,7 +15,7 @@ import asyncio
 from typing import List, Dict, Any, Optional
 import httpx
 
-from core.logging import get_logger
+from shared.logging import get_logger
 
 
 logger = get_logger("advisory-service")

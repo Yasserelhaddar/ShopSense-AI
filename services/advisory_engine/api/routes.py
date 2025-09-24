@@ -15,7 +15,7 @@ from typing import List, Dict, Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from core.logging import get_logger
+from shared.logging import get_logger
 from api.schemas import (
     SearchRequest,
     SearchResponse,

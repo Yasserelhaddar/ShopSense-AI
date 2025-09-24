@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from core.logging import setup_logger
+from shared.logging import setup_logger
 from config.settings import AdvisorySettings
 from api.routes import router
 from clients.knowledge_client import KnowledgeClient
