@@ -42,7 +42,7 @@ class TrainingConfig(BaseModel):
         max_length: Maximum sequence length
         use_qlora: Whether to use QLoRA for efficient training
     """
-    epochs: int = Field(default=3, ge=1, le=10, description="Number of training epochs")
+    epochs: int = Field(default=3, ge=1, le=50, description="Number of training epochs")
     learning_rate: float = Field(default=2e-4, gt=0, description="Learning rate")
     batch_size: int = Field(default=1, ge=1, le=32, description="Training batch size")
     max_length: int = Field(default=2048, ge=512, le=4096, description="Maximum sequence length")
@@ -170,3 +170,100 @@ class HealthResponse(BaseModel):
     external_apis: Dict[str, str] = Field(..., description="External API statuses")
     overall: str = Field(..., description="Overall health status")
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="Check timestamp")
+
+
+class DataGenerationRequest(BaseModel):
+    """
+    Request model for synthetic dataset generation.
+
+    Attributes:
+        number_of_conversations: Number of conversations to generate
+        topics: Optional list of specific topics to focus on
+        difficulty_level: Complexity of generated conversations
+        include_product_data: Whether to include product recommendations
+        dataset_name: Optional name for the generated dataset
+    """
+    number_of_conversations: int = Field(
+        ...,
+        ge=10,
+        le=1000,
+        description="Number of conversations to generate"
+    )
+    topics: Optional[List[str]] = Field(
+        None,
+        description="Specific topics for conversations (e.g., 'electronics', 'fashion')"
+    )
+    difficulty_level: str = Field(
+        default="medium",
+        description="Conversation complexity: simple, medium, complex"
+    )
+    include_product_data: bool = Field(
+        default=True,
+        description="Include product recommendations in conversations"
+    )
+    dataset_name: Optional[str] = Field(
+        None,
+        description="Name for the generated dataset"
+    )
+
+
+class DataGenerationResponse(BaseModel):
+    """
+    Response model for dataset generation request.
+
+    Attributes:
+        job_id: Unique identifier for the generation job
+        status: Current status of the job
+        estimated_conversations: Number of conversations being generated
+        estimated_cost: Estimated OpenAI API cost in USD
+        estimated_duration: Estimated time to completion
+        dataset_name: Name of the dataset being created
+    """
+    job_id: str = Field(..., description="Unique job identifier")
+    status: str = Field(..., description="Job status")
+    estimated_conversations: int = Field(..., description="Number of conversations")
+    estimated_cost: float = Field(..., description="Estimated cost in USD")
+    estimated_duration: str = Field(..., description="Estimated completion time")
+    dataset_name: str = Field(..., description="Dataset name")
+
+
+class TrainingMetrics(BaseModel):
+    """
+    Real-time training metrics.
+
+    Attributes:
+        current_loss: Current training loss value
+        learning_rate: Current learning rate
+        throughput: Training samples per second
+        samples_processed: Total samples processed so far
+        epoch: Current epoch number
+    """
+    current_loss: Optional[float] = Field(None, description="Current loss value")
+    learning_rate: Optional[float] = Field(None, description="Current learning rate")
+    throughput: Optional[float] = Field(None, description="Samples per second")
+    samples_processed: Optional[int] = Field(None, description="Total samples processed")
+    epoch: Optional[int] = Field(None, description="Current epoch")
+
+
+class TrainingStatusResponse(BaseModel):
+    """
+    Response model for training job status.
+
+    Attributes:
+        job_id: Unique identifier for the training job
+        status: Current job status (starting, preparing_data, training, completed, failed)
+        progress: Progress percentage (0-100)
+        started_at: When the job was started
+        elapsed_time: Time elapsed since start (human-readable)
+        estimated_remaining: Estimated time remaining (human-readable)
+        metrics: Current training metrics
+        error: Error message if job failed
+    """
+    job_id: str = Field(..., description="Unique job identifier")
+    status: str = Field(..., description="Job status")
+    progress: float = Field(..., ge=0, le=100, description="Progress percentage")
+    started_at: datetime = Field(..., description="Job start time")
+    elapsed_time: str = Field(..., description="Elapsed time (human-readable)")
+    estimated_remaining: Optional[str] = Field(None, description="Estimated remaining time")
+    metrics: Optional[TrainingMetrics] = Field(None, description="Current training metrics")
+    error: Optional[str] = Field(None, description="Error message if failed")

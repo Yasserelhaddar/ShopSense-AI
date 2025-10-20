@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from shared.logging import setup_logger
 from config.settings import KnowledgeSettings
-from api.routes import router
+from api.routes import router, training_manager
 
 
 # Initialize settings and logger
@@ -68,12 +68,22 @@ async def validate_configuration():
 
     Raises:
         ValueError: If required configuration is missing
+
+    Note:
+        Only OpenAI API key is required. WandB is optional for
+        experiment tracking - training will continue with local logging
+        if unavailable.
     """
+    # Required configuration
     if not settings.openai_api_key:
         raise ValueError("OpenAI API key is required")
 
+    # Optional configuration warnings
     if not settings.wandb_api_key:
-        raise ValueError("WandB API key is required")
+        logger.warning("WandB API key not configured - experiment tracking will be disabled")
+
+    if not settings.huggingface_token:
+        logger.warning("HuggingFace token not configured - model downloads may be rate-limited")
 
     logger.info("Configuration validation passed")
 
@@ -82,24 +92,58 @@ async def initialize_external_services():
     """
     Initialize connections to external services.
 
-    Tests connectivity to OpenAI, WandB, and other external APIs
+    Tests connectivity to OpenAI, WandB, HuggingFace, and model storage
     to ensure the service can operate properly.
-    """
-    # Test OpenAI connection
-    try:
-        # TODO: Implement OpenAI connection test
-        logger.info("OpenAI connection validated")
-    except Exception as e:
-        logger.error(f"Failed to connect to OpenAI: {e}")
-        raise
 
-    # Test WandB connection
+    Raises:
+        RuntimeError: If critical services are unavailable
+
+    Note:
+        OpenAI, HuggingFace, and model storage are critical.
+        WandB is optional - service continues with local logging if unavailable.
+    """
+    errors = []
+
+    # Test OpenAI connection (critical)
     try:
-        # TODO: Implement WandB connection test
-        logger.info("WandB connection validated")
+        await training_manager.test_openai_connection()
+        logger.info("✓ OpenAI connection validated")
     except Exception as e:
-        logger.error(f"Failed to connect to WandB: {e}")
-        raise
+        error_msg = f"OpenAI connection failed: {e}"
+        logger.error(error_msg)
+        errors.append(error_msg)
+
+    # Test WandB connection (optional - warning only)
+    try:
+        await training_manager.test_wandb_connection()
+        logger.info("✓ WandB connection validated")
+    except Exception as e:
+        logger.warning(f"WandB connection failed: {e}")
+        logger.info("Training will continue with local logging only")
+        # Don't fail startup for WandB
+
+    # Test HuggingFace connection (critical)
+    try:
+        await training_manager.test_huggingface_connection()
+        logger.info("✓ HuggingFace connection validated")
+    except Exception as e:
+        error_msg = f"HuggingFace connection failed: {e}"
+        logger.error(error_msg)
+        errors.append(error_msg)
+
+    # Test model storage access (critical)
+    try:
+        await training_manager.test_model_storage()
+        logger.info("✓ Model storage access validated")
+    except Exception as e:
+        error_msg = f"Model storage access failed: {e}"
+        logger.error(error_msg)
+        errors.append(error_msg)
+
+    # Fail startup if critical services unavailable
+    if errors:
+        error_summary = "; ".join(errors)
+        raise RuntimeError(f"Service initialization failed: {error_summary}")
 
 
 async def load_available_models():
@@ -108,9 +152,30 @@ async def load_available_models():
 
     Scans model storage directory and validates model files
     to prepare the service for inference requests.
+
+    Note:
+        Models are not loaded into memory on startup (lazy loading).
+        This function only scans for available models and logs their info.
     """
-    # TODO: Implement model loading logic
-    logger.info("Available models loaded")
+    try:
+        models = await training_manager.list_available_models()
+
+        if models:
+            logger.info(f"✓ Found {len(models)} available models:")
+            for model in models:
+                logger.info(
+                    f"  - {model['id']}: {model.get('base_model', 'unknown')} "
+                    f"({model.get('size_mb', 0):.1f} MB, "
+                    f"status: {model.get('status', 'unknown')})"
+                )
+        else:
+            logger.warning("No trained models found in storage")
+            logger.info("Service will use OpenAI fallback for inference until models are trained")
+
+    except Exception as e:
+        # Don't fail startup if no models exist yet
+        logger.warning(f"Failed to load models on startup: {e}")
+        logger.info("Service will use OpenAI fallback for inference")
 
 
 async def cleanup_resources():
@@ -167,7 +232,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "main:app",
+        "api.main:app",
         host="0.0.0.0",
         port=settings.port,
         reload=settings.debug,

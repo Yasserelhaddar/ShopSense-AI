@@ -22,9 +22,14 @@ from api.schemas import (
     ModelInfo,
     InferenceRequest,
     InferenceResponse,
-    HealthResponse
+    HealthResponse,
+    DataGenerationRequest,
+    DataGenerationResponse,
+    TrainingStatusResponse,
+    TrainingMetrics
 )
 from core.training import TrainingManager
+from core.data import DatasetManager
 from core.evaluation import ModelEvaluator
 from config.settings import KnowledgeSettings
 
@@ -34,6 +39,7 @@ router = APIRouter()
 logger = get_logger("knowledge-service")
 settings = KnowledgeSettings()
 training_manager = TrainingManager()
+dataset_manager = DatasetManager()
 model_evaluator = ModelEvaluator()
 
 
@@ -76,6 +82,175 @@ async def start_training(
 
     except Exception as e:
         logger.error(f"Failed to start training: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/data/generate", response_model=DataGenerationResponse)
+async def generate_dataset(
+    request: DataGenerationRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    Generate synthetic training data using OpenAI.
+
+    Args:
+        request: Dataset generation configuration
+        background_tasks: FastAPI background task manager
+
+    Returns:
+        DataGenerationResponse: Job information and cost estimates
+
+    Raises:
+        HTTPException: If generation cannot be started
+
+    Note:
+        This endpoint estimates OpenAI API costs before starting generation.
+        The actual generation happens asynchronously in the background.
+    """
+    try:
+        from datetime import datetime
+        from uuid import uuid4
+
+        # Generate job ID
+        job_id = f"data_gen_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}"
+
+        # Estimate OpenAI API costs
+        # Rough estimate: ~500 tokens per conversation (input + output)
+        # GPT-3.5-turbo: $0.0015/1K input tokens, $0.002/1K output tokens
+        # Average: ~$0.00175/1K tokens = ~$0.875 per 1000 conversations
+        estimated_tokens_per_conversation = 500
+        total_tokens = request.number_of_conversations * estimated_tokens_per_conversation
+        estimated_cost = (total_tokens / 1000) * 0.00175
+
+        # Estimate duration (roughly 2-3 seconds per conversation with API calls)
+        estimated_seconds = request.number_of_conversations * 2.5
+        if estimated_seconds < 60:
+            estimated_duration = f"{int(estimated_seconds)} seconds"
+        elif estimated_seconds < 3600:
+            estimated_duration = f"{int(estimated_seconds / 60)} minutes"
+        else:
+            estimated_duration = f"{estimated_seconds / 3600:.1f} hours"
+
+        # Generate dataset name if not provided
+        dataset_name = request.dataset_name or f"dataset_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        # Schedule generation in background
+        background_tasks.add_task(
+            dataset_manager.generate_synthetic_dataset,
+            dataset_name=dataset_name,
+            num_conversations=request.number_of_conversations,
+            topics=request.topics or ["general shopping", "product recommendations"],
+            difficulty=request.difficulty_level,
+            include_product_data=request.include_product_data
+        )
+
+        logger.info(
+            f"Dataset generation job {job_id} started: "
+            f"{request.number_of_conversations} conversations, "
+            f"estimated cost ${estimated_cost:.4f}"
+        )
+
+        return DataGenerationResponse(
+            job_id=job_id,
+            status="started",
+            estimated_conversations=request.number_of_conversations,
+            estimated_cost=round(estimated_cost, 4),
+            estimated_duration=estimated_duration,
+            dataset_name=dataset_name
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to start dataset generation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/training/status/{job_id}", response_model=TrainingStatusResponse)
+async def get_training_status(job_id: str):
+    """
+    Get the current status of a training job.
+
+    Args:
+        job_id: Unique identifier for the training job
+
+    Returns:
+        TrainingStatusResponse: Job status and progress information
+
+    Raises:
+        HTTPException: If job not found or status cannot be retrieved
+
+    Note:
+        This endpoint provides real-time progress updates for training jobs,
+        including elapsed time, estimated remaining time, and current metrics.
+    """
+    try:
+        from datetime import datetime
+
+        # Check if job exists
+        if job_id not in training_manager.active_jobs:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Training job {job_id} not found"
+            )
+
+        job = training_manager.active_jobs[job_id]
+
+        # Calculate elapsed time
+        started_at = job["started_at"]
+        elapsed_seconds = (datetime.utcnow() - started_at).total_seconds()
+
+        # Format elapsed time as human-readable
+        if elapsed_seconds < 60:
+            elapsed_time = f"{int(elapsed_seconds)} seconds"
+        elif elapsed_seconds < 3600:
+            elapsed_time = f"{int(elapsed_seconds / 60)} minutes"
+        else:
+            hours = int(elapsed_seconds / 3600)
+            minutes = int((elapsed_seconds % 3600) / 60)
+            elapsed_time = f"{hours}h {minutes}m"
+
+        # Calculate estimated remaining time
+        progress = job.get("progress", 0)
+        estimated_remaining = None
+
+        if progress > 0 and progress < 100:
+            # Estimate based on current progress
+            estimated_total_seconds = (elapsed_seconds / progress) * 100
+            remaining_seconds = estimated_total_seconds - elapsed_seconds
+
+            if remaining_seconds < 60:
+                estimated_remaining = f"{int(remaining_seconds)} seconds"
+            elif remaining_seconds < 3600:
+                estimated_remaining = f"{int(remaining_seconds / 60)} minutes"
+            else:
+                hours = int(remaining_seconds / 3600)
+                minutes = int((remaining_seconds % 3600) / 60)
+                estimated_remaining = f"{hours}h {minutes}m"
+
+        # Extract training metrics if available
+        metrics = None
+        if "metrics" in job:
+            metrics = TrainingMetrics(**job["metrics"])
+
+        # Get error message if job failed
+        error = job.get("error", None)
+
+        logger.info(f"Training job {job_id} status: {job['status']} ({progress}%)")
+
+        return TrainingStatusResponse(
+            job_id=job_id,
+            status=job["status"],
+            progress=progress,
+            started_at=started_at,
+            elapsed_time=elapsed_time,
+            estimated_remaining=estimated_remaining,
+            metrics=metrics,
+            error=error
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get training status for job {job_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -124,10 +299,13 @@ async def model_inference(
         if not model:
             raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
 
+        # Convert Pydantic Message objects to dicts
+        messages_dict = [msg.dict() for msg in request.messages]
+
         # Run inference
         response = await training_manager.run_inference(
             model_id=model_id,
-            messages=request.messages,
+            messages=messages_dict,
             max_tokens=request.max_tokens,
             temperature=request.temperature
         )
@@ -135,10 +313,10 @@ async def model_inference(
         logger.info(f"Inference completed for model {model_id}")
 
         return InferenceResponse(
-            response=response.content,
-            model_used=model_id,
-            tokens_used=response.tokens_used,
-            processing_time_ms=response.processing_time_ms
+            response=response["content"],
+            model_used=response.get("model_used", model_id),
+            tokens_used=response["tokens_used"],
+            processing_time_ms=response["processing_time_ms"]
         )
 
     except HTTPException:
