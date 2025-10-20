@@ -42,6 +42,15 @@ class DatasetManager:
         self.data_directory = Path(settings.model_storage_path) / "datasets"
         self.data_directory.mkdir(parents=True, exist_ok=True)
 
+        # Initialize OpenAI client for data generation
+        try:
+            from openai import AsyncOpenAI
+            self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+            logger.info("OpenAI client initialized successfully")
+        except Exception as e:
+            logger.warning(f"OpenAI client initialization failed: {e}")
+            self.openai_client = None
+
     async def dataset_exists(self, dataset_name: str) -> bool:
         """
         Check if a dataset exists.
@@ -61,6 +70,63 @@ class DatasetManager:
             logger.warning(f"Dataset {dataset_name} not found")
 
         return exists
+
+    async def generate_synthetic_dataset(
+        self,
+        dataset_name: str,
+        num_conversations: int = 100,
+        topics: Optional[List[str]] = None,
+        difficulty: str = "medium",
+        include_product_data: bool = True
+    ) -> str:
+        """
+        Generate synthetic dataset for training using OpenAI.
+
+        Args:
+            dataset_name: Name for the new dataset
+            num_conversations: Number of conversations to generate
+            topics: Specific topics for conversations (e.g., 'electronics', 'fashion')
+            difficulty: Conversation complexity: simple, medium, complex
+            include_product_data: Whether to include product details
+
+        Returns:
+            Path to the created dataset file
+
+        Note:
+            This method uses OpenAI to generate more realistic and diverse
+            conversations compared to template-based generation.
+        """
+        # Map topics to conversation types if provided
+        if topics:
+            conversation_types = [self._map_topic_to_type(topic) for topic in topics]
+        else:
+            conversation_types = None
+
+        # Use the create_dataset method with mapped parameters
+        return await self.create_dataset(
+            dataset_name=dataset_name,
+            num_conversations=num_conversations,
+            conversation_types=conversation_types
+        )
+
+    def _map_topic_to_type(self, topic: str) -> str:
+        """
+        Map a topic to a conversation type.
+
+        Args:
+            topic: Topic name (e.g., 'electronics', 'fashion')
+
+        Returns:
+            Conversation type string
+        """
+        topic_mapping = {
+            "electronics": "product_search",
+            "fashion": "recommendations",
+            "home": "product_search",
+            "sports": "recommendations",
+            "books": "recommendations"
+        }
+        return topic_mapping.get(topic.lower(), "product_search")
 
     async def create_dataset(
         self,
@@ -291,7 +357,7 @@ class DatasetManager:
         messages: List[Dict[str, str]]
     ) -> List[Dict[str, str]]:
         """
-        Add variation to conversation messages.
+        Add variation to conversation messages using OpenAI.
 
         Args:
             messages: Original message list
@@ -300,34 +366,66 @@ class DatasetManager:
             List of messages with added variation
 
         Note:
-            Introduces natural variations in language while
-            maintaining the conversation's intent and flow.
+            Uses OpenAI API to introduce natural variations in language
+            while maintaining the conversation's intent and flow.
+            Falls back to simple rule-based variations if OpenAI unavailable.
         """
-        # TODO: Implement message variation logic
-        # For now, return original messages with minor modifications
         varied_messages = []
 
-        for message in messages:
-            varied_content = message["content"]
+        # Use OpenAI if available
+        if self.openai_client:
+            for message in messages:
+                try:
+                    prompt = f"""Rewrite this shopping conversation message with natural variations.
+Keep the same intent, role, and key information, but use different phrasing.
 
-            # Simple variations (in production, use LLM for better variations)
-            variations = {
-                "I'm looking for": ["I need", "I want to buy", "I'm searching for"],
-                "What's your budget": ["How much are you willing to spend", "What price range"],
-                "I recommend": ["I suggest", "Consider", "You might like"]
-            }
+Original: {message['content']}
 
-            for original, replacements in variations.items():
-                if original in varied_content:
-                    varied_content = varied_content.replace(
-                        original,
-                        random.choice(replacements)
+Rewritten message:"""
+
+                    response = await self.openai_client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.8,
+                        max_tokens=150
                     )
 
-            varied_messages.append({
-                "role": message["role"],
-                "content": varied_content
-            })
+                    varied_content = response.choices[0].message.content.strip()
+                    logger.debug(f"OpenAI variation: {message['content'][:50]}... -> {varied_content[:50]}...")
+
+                except Exception as e:
+                    logger.warning(f"OpenAI variation failed: {e}, using original")
+                    varied_content = message["content"]
+
+                varied_messages.append({
+                    "role": message["role"],
+                    "content": varied_content
+                })
+
+        else:
+            # Fallback to simple rule-based variations
+            logger.debug("Using rule-based variations (OpenAI unavailable)")
+            for message in messages:
+                varied_content = message["content"]
+
+                # Simple variations
+                variations = {
+                    "I'm looking for": ["I need", "I want to buy", "I'm searching for"],
+                    "What's your budget": ["How much are you willing to spend", "What price range"],
+                    "I recommend": ["I suggest", "Consider", "You might like"]
+                }
+
+                for original, replacements in variations.items():
+                    if original in varied_content:
+                        varied_content = varied_content.replace(
+                            original,
+                            random.choice(replacements)
+                        )
+
+                varied_messages.append({
+                    "role": message["role"],
+                    "content": varied_content
+                })
 
         return varied_messages
 
