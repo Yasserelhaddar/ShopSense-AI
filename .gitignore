@@ -84,6 +84,9 @@ models/
 data/
 datasets/
 
+# ML Training Artifacts
+wandb/
+
 # Vector Database
 qdrant_data/
 
