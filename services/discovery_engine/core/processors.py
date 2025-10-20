@@ -2,18 +2,17 @@
 Product data processing and embedding generation.
 
 This module handles text embedding generation for semantic search using
-sentence-transformers with clean fallback mechanisms for development.
+sentence-transformers with production-ready implementation.
 
 Key Features:
 - Official sentence-transformers integration
 - Efficient batch processing with configurable sizes
 - Clean text preprocessing and normalization
-- Graceful fallback for development environments
+- Production-ready error handling
 - Product text combination for optimal embeddings
 """
 
 import asyncio
-import hashlib
 import re
 from typing import List, Dict, Any, Optional
 
@@ -33,9 +32,13 @@ class EmbeddingProcessor:
     Sentence transformer-based embedding processor for product data.
 
     This class uses the official sentence-transformers library to generate
-    high-quality embeddings for semantic search. Includes graceful fallback
-    for development environments where the model may not be available.
+    high-quality embeddings for semantic search with production-ready
+    error handling and proper resource management.
     """
+
+    # ============================================================================
+    # LIFECYCLE MANAGEMENT
+    # ============================================================================
 
     def __init__(self):
         """Initialize the embedding processor."""
@@ -49,7 +52,7 @@ class EmbeddingProcessor:
         Initialize the sentence transformer model.
 
         Uses official sentence-transformers patterns with proper
-        error handling and fallback mechanisms.
+        error handling and dependency validation.
         """
         if self.is_initialized:
             return
@@ -76,17 +79,30 @@ class EmbeddingProcessor:
             self.is_initialized = True
 
         except ImportError:
-            logger.warning(
-                "sentence-transformers not available. Using deterministic mock embeddings for development."
-            )
-            self.model = None
-            self.is_initialized = True
+            logger.error("sentence-transformers not available. Please install: pip install sentence-transformers")
+            raise
 
         except Exception as e:
             logger.error(f"Failed to initialize sentence transformer: {e}")
-            logger.info("Falling back to mock embeddings")
+            raise
+
+    async def cleanup(self):
+        """
+        Clean up embedding processor resources.
+
+        Releases model memory and clears caches.
+        """
+        if self.model:
+            # Clear model from memory
+            del self.model
             self.model = None
-            self.is_initialized = True
+
+        self.is_initialized = False
+        logger.info("Embedding processor cleaned up")
+
+    # ============================================================================
+    # CORE EMBEDDING GENERATION
+    # ============================================================================
 
     async def generate_embedding(self, text: str) -> List[float]:
         """
@@ -100,7 +116,7 @@ class EmbeddingProcessor:
 
         Note:
             Uses official sentence-transformers encode() method with
-            normalization. Falls back to deterministic mock for development.
+            normalization and proper error handling.
         """
         if not self.is_initialized:
             await self.initialize()
@@ -112,21 +128,20 @@ class EmbeddingProcessor:
         cleaned_text = self._preprocess_text(text)
 
         try:
-            if self.model:
-                # Official sentence-transformers pattern
-                embedding = self.model.encode(
-                    cleaned_text,
-                    normalize_embeddings=True,  # Cosine similarity optimization
-                    convert_to_numpy=True
-                )
-                return embedding.tolist()
-            else:
-                # Deterministic mock for development
-                return self._generate_mock_embedding(cleaned_text)
+            if not self.model:
+                raise RuntimeError("Embedding model not initialized")
+
+            # Official sentence-transformers pattern
+            embedding = self.model.encode(
+                cleaned_text,
+                normalize_embeddings=True,  # Cosine similarity optimization
+                convert_to_numpy=True
+            )
+            return embedding.tolist()
 
         except Exception as e:
             logger.error(f"Error generating embedding for text: {e}")
-            return self._generate_mock_embedding(cleaned_text)
+            raise
 
     async def generate_batch_embeddings(
         self,
@@ -163,37 +178,31 @@ class EmbeddingProcessor:
             cleaned_texts = [self._preprocess_text(text) for text in batch_texts]
 
             try:
-                if self.model:
-                    # Official batch processing pattern
-                    batch_embeddings = self.model.encode(
-                        cleaned_texts,
-                        normalize_embeddings=True,
-                        convert_to_numpy=True,
-                        show_progress_bar=False
-                    )
-                    all_embeddings.extend(batch_embeddings.tolist())
-                else:
-                    # Mock batch processing
-                    batch_embeddings = [
-                        self._generate_mock_embedding(text)
-                        for text in cleaned_texts
-                    ]
-                    all_embeddings.extend(batch_embeddings)
+                if not self.model:
+                    raise RuntimeError("Embedding model not initialized")
+
+                # Official batch processing pattern
+                batch_embeddings = self.model.encode(
+                    cleaned_texts,
+                    normalize_embeddings=True,
+                    convert_to_numpy=True,
+                    show_progress_bar=False
+                )
+                all_embeddings.extend(batch_embeddings.tolist())
 
             except Exception as e:
                 logger.error(f"Error in batch embedding generation: {e}")
-                # Fallback to individual processing
-                batch_embeddings = [
-                    self._generate_mock_embedding(text)
-                    for text in cleaned_texts
-                ]
-                all_embeddings.extend(batch_embeddings)
+                raise
 
             # Allow other async tasks to run
             await asyncio.sleep(0)
 
         logger.info(f"Generated {len(all_embeddings)} embeddings in {len(texts)//batch_size + 1} batches")
         return all_embeddings
+
+    # ============================================================================
+    # PRODUCT PROCESSING
+    # ============================================================================
 
     def process_product_for_embedding(self, product: ProductData) -> str:
         """
@@ -246,6 +255,10 @@ class EmbeddingProcessor:
         combined_text = " | ".join(text_parts)
         return combined_text
 
+    # ============================================================================
+    # UTILITIES & HELPERS
+    # ============================================================================
+
     def _preprocess_text(self, text: str) -> str:
         """
         Preprocess text for optimal embedding generation.
@@ -282,46 +295,3 @@ class EmbeddingProcessor:
                 text = text[:last_space]
 
         return text.strip()
-
-    def _generate_mock_embedding(self, text: str) -> List[float]:
-        """
-        Generate deterministic mock embedding for development.
-
-        Args:
-            text: Input text
-
-        Returns:
-            Normalized mock embedding vector
-
-        Note:
-            Creates consistent embeddings for the same input text
-            using hash-based seeding for reproducibility.
-        """
-        # Create deterministic seed from text content
-        text_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
-        seed = int(text_hash, 16) % (2**32)
-
-        # Generate deterministic random vector
-        np.random.seed(seed)
-        embedding = np.random.normal(0, 1, self.vector_size)
-
-        # Normalize for cosine similarity
-        norm = np.linalg.norm(embedding)
-        if norm > 0:
-            embedding = embedding / norm
-
-        return embedding.tolist()
-
-    async def cleanup(self):
-        """
-        Clean up embedding processor resources.
-
-        Releases model memory and clears caches.
-        """
-        if self.model:
-            # Clear model from memory
-            del self.model
-            self.model = None
-
-        self.is_initialized = False
-        logger.info("Embedding processor cleaned up")

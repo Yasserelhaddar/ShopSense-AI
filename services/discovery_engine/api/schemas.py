@@ -22,33 +22,40 @@ from pydantic import BaseModel, Field, HttpUrl
 
 class ProductInfo(BaseModel):
     """
-    Basic product information.
+    Basic product information matching core ProductData structure.
+
+    This schema aligns with the ProductData dataclass from collectors.py
+    to ensure consistency between core collection and API responses.
 
     Attributes:
-        id: Unique product identifier
+        id: Unique product identifier (e.g., "amazon_B08X123456")
         title: Product title/name
         price: Current price
-        original_price: Original price (if on sale)
-        currency: Price currency code
-        store: Store/source name
-        rating: Average rating
-        reviews_count: Number of reviews
-        image_url: Product image URL
-        product_url: Link to product page
-        availability: Stock availability status
-        similarity_score: Search relevance score
+        currency: Price currency code (default: USD)
+        store: Store/source name (e.g., "amazon")
+        brand: Product brand (optional)
+        category: Product category (optional)
+        description: Product description (optional, for detailed responses)
+        rating: Average rating (0-5 scale, optional)
+        reviews_count: Number of reviews (optional)
+        image_url: Product image URL (optional)
+        product_url: Link to product page (optional)
+        availability: Stock status (in_stock, out_of_stock, unknown)
+        similarity_score: Search relevance score (for search results)
     """
     id: str = Field(..., description="Unique product identifier")
     title: str = Field(..., description="Product title")
     price: float = Field(..., ge=0, description="Current price")
-    original_price: Optional[float] = Field(None, ge=0, description="Original price")
     currency: str = Field(default="USD", description="Currency code")
     store: str = Field(..., description="Store name")
+    brand: Optional[str] = Field(None, description="Product brand")
+    category: Optional[str] = Field(None, description="Product category")
+    description: Optional[str] = Field(None, description="Product description")
     rating: Optional[float] = Field(None, ge=0, le=5, description="Average rating")
-    reviews_count: int = Field(default=0, ge=0, description="Number of reviews")
+    reviews_count: Optional[int] = Field(None, ge=0, description="Number of reviews")
     image_url: Optional[HttpUrl] = Field(None, description="Product image URL")
     product_url: Optional[HttpUrl] = Field(None, description="Product page URL")
-    availability: str = Field(default="in_stock", description="Availability status")
+    availability: str = Field(default="unknown", description="Availability status")
     similarity_score: Optional[float] = Field(None, ge=0, le=1, description="Search relevance")
 
 
@@ -56,23 +63,20 @@ class ProductDetail(ProductInfo):
     """
     Detailed product information extending basic product info.
 
-    Attributes:
-        description: Full product description
-        key_features: List of key product features
-        specifications: Technical specifications
-        category: Product category
-        brand: Product brand
-        model: Product model
-        weight: Product weight
-        dimensions: Product dimensions
-        warranty: Warranty information
+    Matches core ProductData structure from collectors.py with additional
+    fields for extended product information like key_features and specifications.
+
+    Additional Attributes (beyond ProductInfo):
+        key_features: List of key product features (from core ProductData)
+        specifications: Technical specifications dict (from core ProductData)
+        model: Product model (additional detail field)
+        weight: Product weight (additional detail field)
+        dimensions: Product dimensions (additional detail field)
+        warranty: Warranty information (additional detail field)
         last_updated: When product data was last updated
     """
-    description: Optional[str] = Field(None, description="Product description")
-    key_features: List[str] = Field(default_factory=list, description="Key features")
-    specifications: Dict[str, Any] = Field(default_factory=dict, description="Technical specs")
-    category: Optional[str] = Field(None, description="Product category")
-    brand: Optional[str] = Field(None, description="Product brand")
+    key_features: List[str] = Field(default_factory=list, description="Key product features")
+    specifications: Dict[str, str] = Field(default_factory=dict, description="Technical specifications")
     model: Optional[str] = Field(None, description="Product model")
     weight: Optional[str] = Field(None, description="Product weight")
     dimensions: Optional[str] = Field(None, description="Product dimensions")
@@ -162,13 +166,15 @@ class CollectionRequest(BaseModel):
         sources: List of sources to collect from
         categories: Product categories to focus on
         priority: Collection priority level
-        max_products: Maximum products to collect
+        max_results: Maximum products per query (uses config default if not specified)
+        max_products: Maximum total products to collect across all queries
         force_refresh: Force refresh of existing data
     """
     sources: List[str] = Field(..., description="Collection sources")
     categories: List[str] = Field(default_factory=list, description="Target categories")
     priority: str = Field(default="normal", description="Collection priority")
-    max_products: int = Field(default=1000, ge=1, le=10000, description="Max products")
+    max_results: Optional[int] = Field(default=None, ge=1, le=500, description="Max products per query")
+    max_products: int = Field(default=1000, ge=1, le=10000, description="Max total products")
     force_refresh: bool = Field(default=False, description="Force data refresh")
 
 

@@ -55,6 +55,7 @@ class CollectionJob:
     error_messages: List[str] = None
     started_at: datetime = None
     completed_at: Optional[datetime] = None
+    max_results: Optional[int] = None
 
     def __post_init__(self):
         if self.error_messages is None:
@@ -84,6 +85,7 @@ class ProductData:
     rating: Optional[float] = None
     reviews_count: Optional[int] = None
     availability: str = "unknown"
+    original_price: Optional[float] = None
     key_features: List[str] = None
     specifications: Dict[str, str] = None
 
@@ -103,6 +105,10 @@ class ApifyCollector:
     for collecting product data from Amazon and other supported platforms.
     Implements proper rate limiting and retry mechanisms.
     """
+
+    # ============================================================================
+    # INITIALIZATION & CONNECTION MANAGEMENT
+    # ============================================================================
 
     def __init__(self):
         """Initialize the Apify collector."""
@@ -159,6 +165,10 @@ class ApifyCollector:
             self.session = None
             logger.info("Apify collector cleaned up")
 
+    # ============================================================================
+    # CORE API OPERATIONS
+    # ============================================================================
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -206,6 +216,10 @@ class ApifyCollector:
         )
         response.raise_for_status()
         return response.json()
+
+    # ============================================================================
+    # PRODUCT COLLECTION METHODS
+    # ============================================================================
 
     async def search_amazon_products(
         self,
@@ -278,6 +292,10 @@ class ApifyCollector:
             logger.error(f"Amazon search failed for query '{query}': {e}")
             return []
 
+    # ============================================================================
+    # DATA PARSING & PROCESSING
+    # ============================================================================
+
     def _parse_amazon_product(self, raw_data: Dict[str, Any]) -> Optional[ProductData]:
         """
         Parse raw Amazon product data from Apify Actor into standardized format.
@@ -301,6 +319,9 @@ class ApifyCollector:
             if price is None:
                 return None  # Skip products without valid prices
 
+            # Extract list price (MSRP) for deal detection
+            list_price = self._extract_list_price(raw_data)
+
             # Extract basic product information
             title = self._clean_text(raw_data.get("title", ""))
             if not title:
@@ -319,9 +340,10 @@ class ApifyCollector:
                 image_url=raw_data.get("thumbnailImage"),
                 product_url=raw_data.get("url"),
                 rating=self._extract_rating(raw_data),
-                reviews_count=raw_data.get("reviewsCount"),
-                availability=self._extract_availability_new_format(raw_data),
-                key_features=self._extract_features_new_format(raw_data),
+                reviews_count=self._extract_reviews_count(raw_data),
+                availability=self._extract_availability(raw_data),
+                original_price=list_price,
+                key_features=self._extract_features(raw_data),
                 specifications=self._extract_specifications(raw_data)
             )
 
@@ -330,6 +352,10 @@ class ApifyCollector:
         except Exception as e:
             logger.warning(f"Failed to parse Amazon product: {e}")
             return None
+
+    # ============================================================================
+    # DATA EXTRACTION METHODS
+    # ============================================================================
 
     def _extract_price(self, data: Dict[str, Any]) -> Optional[float]:
         """Extract and validate price from product data (Apify format)."""
@@ -353,6 +379,25 @@ class ApifyCollector:
             if price_cleaned:
                 try:
                     price = float(price_cleaned)
+                    if 0.01 <= price <= 50000.0:
+                        return round(price, 2)
+                except (ValueError, TypeError):
+                    pass
+
+        return None
+
+    def _extract_list_price(self, data: Dict[str, Any]) -> Optional[float]:
+        """Extract list/MSRP price from product data (Apify format)."""
+        list_price_data = data.get("listPrice")
+        if not list_price_data:
+            return None
+
+        # Handle Apify price format: {value: 299.99, currency: "$"}
+        if isinstance(list_price_data, dict):
+            price_value = list_price_data.get("value")
+            if price_value is not None:
+                try:
+                    price = float(price_value)
                     if 0.01 <= price <= 50000.0:
                         return round(price, 2)
                 except (ValueError, TypeError):
@@ -387,9 +432,9 @@ class ApifyCollector:
         breadcrumbs = data.get("breadCrumbs", "")
         if breadcrumbs:
             # Extract meaningful category from breadcrumbs
-            categories = [cat.strip() for cat in breadcrumbs.split("›") if cat.strip()]
+            categories = [cat.strip() for cat in breadcrumbs.split(">") if cat.strip()]
             if len(categories) >= 2:
-                return categories[1][:100]  # Second level category
+                return categories[-2][:100]  # Second-to-last category (most specific meaningful category)
 
         # Try direct category field
         category = data.get("category")
@@ -411,8 +456,8 @@ class ApifyCollector:
         return None
 
     def _extract_reviews_count(self, data: Dict[str, Any]) -> Optional[int]:
-        """Extract reviews count from product data (Apify uses 'reviewsCount')."""
-        reviews = data.get("reviewsCount") or data.get("reviews_count")  # Apify uses 'reviewsCount'
+        """Extract reviews count from product data."""
+        reviews = data.get("reviewsCount") or data.get("reviews_count")
         if reviews:
             try:
                 # Handle string numbers with commas
@@ -426,28 +471,15 @@ class ApifyCollector:
 
     def _extract_availability(self, data: Dict[str, Any]) -> str:
         """Extract availability status from product data."""
-        availability = data.get("availability", "").lower()
-
-        if "in stock" in availability:
-            return "in_stock"
-        elif "out of stock" in availability:
-            return "out_of_stock"
-        elif "temporarily unavailable" in availability:
-            return "temporarily_unavailable"
-        else:
-            return "unknown"
-
-    def _extract_availability_new_format(self, data: Dict[str, Any]) -> str:
-        """Extract availability status from new Amazon Product Scraper format."""
-        # Check inStock boolean field
+        # Check inStock boolean field first (new format)
         in_stock = data.get("inStock")
         if in_stock is True:
             return "in_stock"
         elif in_stock is False:
             return "out_of_stock"
 
-        # Fallback to inStockText analysis
-        stock_text = data.get("inStockText", "").lower()
+        # Fallback to text analysis (legacy format)
+        stock_text = (data.get("inStockText", "") or data.get("availability", "")).lower()
         if "in stock" in stock_text:
             return "in_stock"
         elif "out of stock" in stock_text:
@@ -457,26 +489,15 @@ class ApifyCollector:
         else:
             return "unknown"
 
-    def _extract_features_new_format(self, data: Dict[str, Any]) -> List[str]:
-        """Extract key features from new Amazon Product Scraper format."""
-        features = []
-
-        # Try 'features' field (this Actor uses 'features')
-        feature_data = data.get("features", [])
-        if isinstance(feature_data, list):
-            for feature in feature_data[:10]:  # Limit to 10 features
-                cleaned = self._clean_text(str(feature))
-                if cleaned and len(cleaned) <= 200:
-                    features.append(cleaned)
-
-        return features
-
     def _extract_features(self, data: Dict[str, Any]) -> List[str]:
         """Extract key features from product data."""
         features = []
 
-        # Try feature_bullets or key_features field
-        feature_data = data.get("feature_bullets") or data.get("key_features", [])
+        # Try multiple field names (handles both old and new formats)
+        feature_data = (data.get("features") or
+                       data.get("feature_bullets") or
+                       data.get("key_features", []))
+
         if isinstance(feature_data, list):
             for feature in feature_data[:10]:  # Limit to 10 features
                 cleaned = self._clean_text(str(feature))
@@ -498,6 +519,10 @@ class ApifyCollector:
                     specs[clean_key] = clean_value
 
         return specs
+
+    # ============================================================================
+    # UTILITIES & VALIDATION
+    # ============================================================================
 
     def _clean_text(self, text: str) -> str:
         """Clean and normalize text data."""
@@ -555,70 +580,121 @@ class CollectorManager:
 
     def __init__(self, storage_manager=None, embedding_processor=None):
         """Initialize the collector manager."""
-        self.apify_collector = ApifyCollector()
+        # Collector registry - easier to extend in future
+        self.collectors = {
+            "amazon": ApifyCollector()
+            # Future: "bestbuy": BestBuyCollector(), "walmart": WalmartCollector()
+        }
         self.collectors_initialized = False
         # In-memory job tracking (in production, use Redis or database)
         self.jobs: Dict[str, CollectionJob] = {}
         # References to other managers for product storage
         self.storage_manager = storage_manager
         self.embedding_processor = embedding_processor
+        # Configuration settings
+        self.settings = settings
+
+    # ===== LIFECYCLE MANAGEMENT =====
 
     async def initialize(self):
         """Initialize all collectors."""
         if not self.collectors_initialized:
-            await self.apify_collector.initialize()
+            for source, collector in self.collectors.items():
+                try:
+                    await collector.initialize()
+                    logger.info(f"✅ {source} collector initialized")
+                except Exception as e:
+                    logger.error(f"❌ Failed to initialize {source} collector: {e}")
             self.collectors_initialized = True
             logger.info("Collector manager initialized")
 
     async def cleanup(self):
         """Clean up all collectors."""
         if self.collectors_initialized:
-            await self.apify_collector.cleanup()
+            for source, collector in self.collectors.items():
+                try:
+                    await collector.cleanup()
+                    logger.info(f"✅ {source} collector cleaned up")
+                except Exception as e:
+                    logger.error(f"❌ Failed to cleanup {source} collector: {e}")
             self.collectors_initialized = False
             logger.info("Collector manager cleaned up")
 
-    async def collect_trending_products(self) -> List[ProductData]:
-        """Collect trending products from all available sources."""
+    def get_available_sources(self) -> List[str]:
+        """Get list of available collection sources."""
+        return list(self.collectors.keys())
+
+    # ===== COLLECTION METHODS =====
+
+    async def collect_products(self, sources: List[str], categories: List[str], max_results: int = None) -> List[ProductData]:
+        """
+        Collect products from specified sources and categories.
+
+        Args:
+            sources: List of source names (e.g., ["amazon"])
+            categories: List of categories to search (e.g., ["laptops", "phones"])
+            max_results: Maximum total products to collect globally (defaults to config setting)
+
+        Returns:
+            List of collected products
+        """
         if not self.collectors_initialized:
             await self.initialize()
 
-        trending_queries = [
-            "laptop deals",
-            "gaming headphones",
-            "smartphone",
-            "wireless earbuds",
-            "fitness tracker",
-            "coffee maker",
-            "bluetooth speaker",
-            "tablet"
-        ]
-
         all_products = []
+        global_max = max_results or self.settings.default_collection_limit
+        total_collected = 0
 
-        for query in trending_queries:
-            try:
-                products = await self.apify_collector.search_amazon_products(
-                    query=query,
-                    max_results=20
-                )
-                all_products.extend(products)
+        for source in sources:
+            collector = self.collectors.get(source)
+            if not collector:
+                logger.warning(f"No collector available for source: {source}")
+                continue
 
-                # Add delay between queries to be respectful
-                await asyncio.sleep(2)
+            for category in categories:
+                try:
+                    # Check if we've reached the global limit
+                    if total_collected >= global_max:
+                        logger.info(f"Reached global product limit ({global_max}), stopping collection")
+                        break
 
-            except Exception as e:
-                logger.error(f"Failed to collect trending products for '{query}': {e}")
+                    # Calculate how many more products we can collect
+                    remaining = global_max - total_collected
 
-        # Remove duplicates based on product ID
-        unique_products = self._deduplicate_products(all_products)
-        logger.info(f"Collected {len(unique_products)} unique trending products")
+                    # Abstract method dispatch - ready for multiple collector types
+                    if source == "amazon":
+                        products = await collector.search_amazon_products(
+                            query=category,
+                            max_results=min(remaining, self.settings.max_collection_limit)
+                        )
+                        all_products.extend(products)
+                        total_collected += len(products)
+                        logger.info(f"Collected {len(products)} products from {source}/{category} (total: {total_collected}/{global_max})")
+                    # Future: elif source == "bestbuy": products = await collector.search_bestbuy_products(...)
+                    # Future: elif source == "walmart": products = await collector.search_walmart_products(...)
 
-        return unique_products
+                    # Add delay between requests to be respectful
+                    await asyncio.sleep(2)
+
+                except Exception as e:
+                    logger.error(f"Collection failed for {source}/{category}: {e}")
+
+            # Break outer loop if limit reached
+            if total_collected >= global_max:
+                break
+
+        return self._deduplicate_products(all_products)
+
+    async def collect_trending_products(self) -> List[ProductData]:
+        """Collect trending products from all available sources."""
+        trending_queries = settings.get_trending_queries()
+        return await self.collect_products(["amazon"], trending_queries)
 
     async def start_collection_job(
         self,
         sources: List[str],
         categories: List[str] = None,
+        max_results: Optional[int] = None,
         priority: str = "normal",
         background_tasks=None
     ) -> str:
@@ -628,6 +704,7 @@ class CollectorManager:
         Args:
             sources: List of sources to collect from
             categories: Product categories to focus on
+            max_results: Maximum products per query (uses config default if None)
             priority: Collection priority level
             background_tasks: FastAPI background tasks
 
@@ -643,6 +720,7 @@ class CollectorManager:
             job_id=job_id,
             sources=sources,
             categories=categories or [],
+            max_results=max_results,
             status=JobStatus.PENDING,
             started_at=datetime.now(timezone.utc)
         )
@@ -683,32 +761,8 @@ class CollectorManager:
                 logger.error(f"Job {job_id}: No categories specified for manual collection")
                 return
 
-            all_products = []
-            total_categories = len(job.categories)
-
-            # Collect products from specified sources
-            if "amazon" in job.sources:
-                for i, category in enumerate(job.categories):
-                    try:
-                        logger.info(f"Job {job_id}: Collecting products for category: {category}")
-                        products = await self.apify_collector.search_amazon_products(
-                            query=category,
-                            max_results=20
-                        )
-                        all_products.extend(products)
-                        job.products_collected = len(all_products)
-                        job.progress = ((i + 1) / total_categories) * 90.0  # Leave 10% for storage
-
-                        logger.info(f"Job {job_id}: Found {len(products)} products for category: {category}")
-
-                    except Exception as e:
-                        job.errors_count += 1
-                        job.error_messages.append(f"Failed to collect category '{category}': {str(e)}")
-                        logger.error(f"Job {job_id}: Failed to collect products for category '{category}': {e}")
-                        continue
-
-            # Deduplicate products
-            unique_products = self._deduplicate_products(all_products)
+            # Collect products using the centralized collection method with job-specific max_results
+            unique_products = await self.collect_products(job.sources, job.categories, job.max_results)
             job.products_collected = len(unique_products)
             job.progress = 95.0
 
@@ -783,71 +837,31 @@ class CollectorManager:
             "last_update": datetime.now(timezone.utc).isoformat()
         }
 
-    async def test_apify_connection(self) -> bool:
-        """Test connection to Apify API."""
-        try:
-            if not self.collectors_initialized:
-                await self.initialize()
+    # ===== TESTING & MONITORING =====
 
-            # Test by making a simple request
-            await self.apify_collector.search_amazon_products("test", max_results=1)
-            return True
+    async def test_connections(self) -> Dict[str, bool]:
+        """Test connections to all collectors."""
+        results = {}
 
-        except Exception as e:
-            logger.error(f"Apify connection test failed: {e}")
-            return False
-
-    async def test_bestbuy_connection(self) -> bool:
-        """Test connection to Best Buy API."""
-        # Mock implementation since Best Buy collector is not implemented yet
-        logger.info("Best Buy API connection test (mock)")
-        return True
-
-    async def monitor_prices(self):
-        """Monitor price changes for tracked products."""
-        # TODO: Implement price monitoring logic
-        logger.info("Price monitoring task executed")
-
-    async def collect_requested_categories(self, categories: List[str]) -> List[ProductData]:
-        """
-        Collect products for specifically requested categories only.
-
-        This method is used for manual collection requests and ONLY searches
-        for the categories specified by the user. No fallback to trending topics.
-
-        Args:
-            categories: List of product categories to search for
-
-        Returns:
-            List of collected products
-        """
         if not self.collectors_initialized:
             await self.initialize()
 
-        if not categories:
-            logger.warning("No categories specified for requested collection")
-            return []
-
-        all_products = []
-        for category in categories:
+        for source, collector in self.collectors.items():
             try:
-                logger.info(f"Collecting products for requested category: {category}")
-                products = await self.apify_collector.search_amazon_products(
-                    query=category,
-                    max_results=20
-                )
-                all_products.extend(products)
-                logger.info(f"Found {len(products)} products for category: {category}")
-
+                result = await collector.test_connection()
+                results[source] = result
+                logger.info(f"✅ {source} connection test: {'passed' if result else 'failed'}")
             except Exception as e:
-                logger.error(f"Failed to collect products for category '{category}': {e}")
-                continue
+                results[source] = False
+                logger.error(f"❌ {source} connection test failed: {e}")
 
-        # Remove duplicates
-        unique_products = self._deduplicate_products(all_products)
+        return results
 
-        logger.info(f"Collected {len(unique_products)} unique requested products from {len(categories)} categories")
-        return unique_products
+    async def monitor_prices(self):
+        """Monitor price changes for tracked products."""
+        logger.info("Price monitoring task executed")
+        # TODO: Implement price monitoring feature when product tracking is required
+        # Would involve querying stored products, re-scraping prices, and detecting changes
 
     def _deduplicate_products(self, products: List[ProductData]) -> List[ProductData]:
         """Remove duplicate products based on similarity."""

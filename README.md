@@ -18,9 +18,11 @@ ShopSense-AI is a microservices-based shopping intelligence platform that provid
 │  └─ Product comparison and analysis                            │
 ├─────────────────────────────────────────────────────────────────┤
 │  🔍 Discovery Engine (Port 8002) - Data Collection & Search     │
-│  ├─ Product data collection from multiple platforms            │
-│  ├─ Vector-based semantic search                               │
-│  └─ Deal monitoring and price tracking                         │
+│  ├─ Apify-powered product collection from Amazon               │
+│  ├─ Qdrant vector-based semantic search (384-dim embeddings)   │
+│  ├─ Intelligent relevance filtering (similarity threshold)     │
+│  ├─ Price, category, store, and brand filtering                │
+│  └─ Background job processing with status tracking             │
 ├─────────────────────────────────────────────────────────────────┤
 │  🧠 Knowledge Engine (Port 8001) - AI Training & Inference      │
 │  ├─ LLM fine-tuning for shopping domains                       │
@@ -134,7 +136,70 @@ curl -X POST "http://localhost:8003/api/v1/search" \
 | Discovery Engine | 8002 | http://localhost:8002/docs | Product search & collection |
 | Advisory Engine | 8003 | http://localhost:8003/docs | User-facing recommendations |
 
-### Key API Examples
+### Discovery Engine API Examples
+
+#### 1. Trigger Product Collection
+```bash
+# Collect up to 20 PS5 controllers from Amazon
+curl -X POST "http://localhost:8002/api/v1/products/collect" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sources": ["amazon"],
+    "categories": ["PS5 Controller"],
+    "max_results": 20
+  }'
+
+# Response: {"job_id": "...", "status": "started", "estimated_duration": "15-30 minutes"}
+```
+
+#### 2. Check Collection Status
+```bash
+curl "http://localhost:8002/api/v1/collection/status/{job_id}"
+
+# Response includes: status, progress, products_collected, errors
+```
+
+#### 3. Semantic Product Search
+```bash
+# Search with intelligent semantic understanding
+curl "http://localhost:8002/api/v1/products/search?query=gaming+controller&limit=10"
+
+# Advanced search with filters
+curl "http://localhost:8002/api/v1/products/search?query=controller&min_price=40&max_price=50&category=Accessories&sort_by=price_asc"
+
+# Key Features:
+# ✓ Semantic understanding (e.g., "sports equipment for kids" ranks children's products higher)
+# ✓ Similarity threshold filtering (excludes results with <0.2 relevance)
+# ✓ Real-time search metrics (actual timing, not hardcoded)
+# ✓ Multi-criteria filtering (price, category, store, brand)
+```
+
+#### 4. Get Product Details
+```bash
+# Fetch product by original Amazon ASIN
+curl "http://localhost:8002/api/v1/products/amazon_B0DTP6BRVL"
+
+# Returns: Full product details with ratings, features, specs
+```
+
+#### 5. Browse Categories & Stores
+```bash
+# Get all available categories with product counts
+curl "http://localhost:8002/api/v1/products/categories"
+
+# Get all available stores
+curl "http://localhost:8002/api/v1/products/stores"
+```
+
+#### 6. Find Deals (Coming Soon)
+```bash
+# Get current deals with minimum discount
+curl "http://localhost:8002/api/v1/deals?min_discount=10&category=Electronics"
+
+# Note: Requires products with original_price data
+```
+
+### Advisory Engine API Examples (Future Integration)
 
 #### AI-Powered Product Search
 ```bash
@@ -159,18 +224,6 @@ curl -X POST "http://localhost:8003/api/v1/advice" \
       {"role": "assistant", "content": "What will you primarily use it for?"},
       {"role": "user", "content": "Programming and some light gaming"}
     ]
-  }'
-```
-
-#### Product Comparison
-```bash
-curl -X POST "http://localhost:8003/api/v1/compare" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "product_ids": ["prod_12345", "prod_67890"],
-    "comparison_criteria": {
-      "factors": ["price", "performance", "build_quality"]
-    }
   }'
 ```
 

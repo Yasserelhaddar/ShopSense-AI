@@ -12,6 +12,7 @@ Endpoints:
 - GET /health: Health check
 """
 
+import time
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Query, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
@@ -66,6 +67,9 @@ async def search_products(
         HTTPException: If search fails
     """
     try:
+        # Start timing
+        start_time = time.perf_counter()
+
         # Get storage manager from app state
         storage_manager = request.app.state.storage_manager
         embedding_processor = request.app.state.embedding_processor
@@ -92,18 +96,78 @@ async def search_products(
             sort_by=sort_by
         )
 
-        logger.info(f"Product search completed: {len(search_results)} results for '{query}'")
+        # Calculate actual search time
+        end_time = time.perf_counter()
+        search_time_ms = round((end_time - start_time) * 1000, 1)
+
+        logger.info(f"Product search completed: {len(search_results)} results for '{query}' in {search_time_ms}ms")
 
         return ProductSearchResponse(
             products=search_results,
             total_results=len(search_results),
-            search_time_ms=45,  # TODO: Implement actual timing
+            search_time_ms=search_time_ms,
             query=query,
             filters_applied=filters
         )
 
     except Exception as e:
         logger.error(f"Product search failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/products/categories")
+async def get_product_categories(request: Request):
+    """
+    Get available product categories.
+
+    Args:
+        request: FastAPI request object
+
+    Returns:
+        dict: Available categories with counts
+    """
+    try:
+        storage_manager = request.app.state.storage_manager
+
+        categories = await storage_manager.get_available_categories()
+
+        logger.info(f"Retrieved {len(categories)} product categories")
+
+        return {
+            "categories": categories,
+            "total_categories": len(categories)
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to retrieve categories: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/products/stores")
+async def get_available_stores(request: Request):
+    """
+    Get available stores/sources.
+
+    Args:
+        request: FastAPI request object
+
+    Returns:
+        dict: Available stores with counts
+    """
+    try:
+        storage_manager = request.app.state.storage_manager
+
+        stores = await storage_manager.get_available_stores()
+
+        logger.info(f"Retrieved {len(stores)} available stores")
+
+        return {
+            "stores": stores,
+            "total_stores": len(stores)
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to retrieve stores: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -221,6 +285,7 @@ async def trigger_product_collection(
         job_id = await collector_manager.start_collection_job(
             sources=collection_request.sources,
             categories=collection_request.categories,
+            max_results=collection_request.max_results,
             priority=collection_request.priority,
             background_tasks=background_tasks
         )
@@ -240,61 +305,6 @@ async def trigger_product_collection(
         logger.error(f"Failed to start collection job: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@router.get("/products/categories")
-async def get_product_categories(request: Request):
-    """
-    Get available product categories.
-
-    Args:
-        request: FastAPI request object
-
-    Returns:
-        dict: Available categories with counts
-    """
-    try:
-        storage_manager = request.app.state.storage_manager
-
-        categories = await storage_manager.get_available_categories()
-
-        logger.info(f"Retrieved {len(categories)} product categories")
-
-        return {
-            "categories": categories,
-            "total_categories": len(categories)
-        }
-
-    except Exception as e:
-        logger.error(f"Failed to retrieve categories: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/products/stores")
-async def get_available_stores(request: Request):
-    """
-    Get available stores/sources.
-
-    Args:
-        request: FastAPI request object
-
-    Returns:
-        dict: Available stores with statistics
-    """
-    try:
-        storage_manager = request.app.state.storage_manager
-
-        stores = await storage_manager.get_available_stores()
-
-        logger.info(f"Retrieved {len(stores)} available stores")
-
-        return {
-            "stores": stores,
-            "total_stores": len(stores)
-        }
-
-    except Exception as e:
-        logger.error(f"Failed to retrieve stores: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/collection/status/{job_id}")
@@ -360,19 +370,19 @@ async def health_check(request: Request):
         except Exception as e:
             health_status["external_apis"]["qdrant"] = f"unhealthy: {str(e)}"
 
-        # Check Apify API
+        # Check all collector connections
         try:
-            await collector_manager.test_apify_connection()
-            health_status["external_apis"]["apify"] = "healthy"
-        except Exception as e:
-            health_status["external_apis"]["apify"] = f"unhealthy: {str(e)}"
+            connections_status = await collector_manager.test_connections()
 
-        # Check Best Buy API
-        try:
-            await collector_manager.test_bestbuy_connection()
-            health_status["external_apis"]["bestbuy"] = "healthy"
+            # Map connection results to health status
+            for source, is_healthy in connections_status.items():
+                if source == "amazon":  # Apify collector handles Amazon
+                    health_status["external_apis"]["apify"] = "healthy" if is_healthy else "unhealthy: connection failed"
+                else:
+                    health_status["external_apis"][source] = "healthy" if is_healthy else "unhealthy: connection failed"
+
         except Exception as e:
-            health_status["external_apis"]["bestbuy"] = f"unhealthy: {str(e)}"
+            health_status["external_apis"]["collectors"] = f"unhealthy: {str(e)}"
 
         # Determine overall health
         all_external_healthy = all(

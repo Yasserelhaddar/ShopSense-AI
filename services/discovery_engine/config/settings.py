@@ -156,6 +156,22 @@ class DiscoverySettings(BaseSettings):
         le=10,
         description="Maximum collection retry attempts"
     )
+    default_collection_limit: int = Field(
+        default=20,
+        ge=5,
+        le=100,
+        description="Default products per query for collection"
+    )
+    max_collection_limit: int = Field(
+        default=100,
+        ge=1,
+        le=500,
+        description="Maximum products per query for collection"
+    )
+    trending_queries: str = Field(
+        default="laptop deals,gaming headphones,smartphone,wireless earbuds,fitness tracker,coffee maker,bluetooth speaker,tablet",
+        description="Comma-separated trending product queries"
+    )
 
     # Search Configuration
     default_search_limit: int = Field(
@@ -169,6 +185,12 @@ class DiscoverySettings(BaseSettings):
         ge=10,
         le=500,
         description="Maximum search result limit"
+    )
+    min_similarity_threshold: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="Minimum similarity score threshold for search results"
     )
 
     # Cache Configuration
@@ -348,8 +370,21 @@ class DiscoverySettings(BaseSettings):
             "batch_size": self.collection_batch_size,
             "interval_hours": self.collection_interval_hours,
             "max_retries": self.max_collection_retries,
-            "max_concurrent": self.max_concurrent_collections
+            "max_concurrent": self.max_concurrent_collections,
+            "default_limit": self.default_collection_limit,
+            "max_limit": self.max_collection_limit,
+            "trending_queries": self.get_trending_queries()
         }
+
+    def get_trending_queries(self) -> list[str]:
+        """
+        Parse trending queries from configuration string.
+
+        Returns:
+            List of trending query strings
+        """
+        queries = [q.strip() for q in self.trending_queries.split(",")]
+        return [q for q in queries if q]  # Remove empty strings
 
     def get_api_configs(self) -> dict:
         """

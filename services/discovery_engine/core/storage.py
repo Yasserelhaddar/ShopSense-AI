@@ -37,6 +37,10 @@ class StorageManager:
     Includes graceful fallback for development environments.
     """
 
+    # ============================================================================
+    # LIFECYCLE MANAGEMENT
+    # ============================================================================
+
     def __init__(self):
         """Initialize storage manager with Qdrant client."""
         self.qdrant_client = None
@@ -75,17 +79,29 @@ class StorageManager:
             logger.info("Qdrant storage manager initialized successfully")
 
         except ImportError:
-            logger.warning(
-                "qdrant-client not available. Using mock storage for development."
-            )
-            self.qdrant_client = None
-            self.is_initialized = True
+            logger.error("qdrant-client not available. Please install: pip install qdrant-client")
+            raise
 
         except Exception as e:
             logger.error(f"Failed to initialize Qdrant client: {e}")
-            logger.info("Falling back to mock storage")
-            self.qdrant_client = None
-            self.is_initialized = True
+            raise
+
+    async def cleanup(self):
+        """Clean up Qdrant client connection."""
+        try:
+            if self.qdrant_client:
+                await self.qdrant_client.close()
+                self.qdrant_client = None
+
+            self.is_initialized = False
+            logger.info("Storage manager cleaned up successfully")
+
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+
+    # ============================================================================
+    # COLLECTION MANAGEMENT
+    # ============================================================================
 
     async def _create_collection(self):
         """Create Qdrant collection with proper vector configuration."""
@@ -107,6 +123,10 @@ class StorageManager:
         except Exception as e:
             logger.error(f"Failed to create collection: {e}")
             raise
+
+    # ============================================================================
+    # CORE STORAGE OPERATIONS
+    # ============================================================================
 
     async def store_products(self, products: List[ProductData], embeddings: List[List[float]]):
         """
@@ -140,6 +160,7 @@ class StorageManager:
                 for product, embedding in zip(products, embeddings):
                     # Create payload from product data
                     payload = {
+                        "product_id": product.id,  # Store original product ID
                         "title": product.title,
                         "price": product.price,
                         "currency": product.currency,
@@ -152,6 +173,7 @@ class StorageManager:
                         "rating": product.rating,
                         "reviews_count": product.reviews_count,
                         "availability": product.availability,
+                        "original_price": product.original_price,
                         "key_features": product.key_features,
                         "specifications": product.specifications,
                         "last_updated": datetime.utcnow().isoformat()
@@ -176,8 +198,8 @@ class StorageManager:
                 logger.info(f"Successfully stored {len(products)} products in Qdrant")
 
             else:
-                # Mock storage for development
-                logger.info(f"Mock storage: would store {len(products)} products")
+                logger.error("No Qdrant client available for storage")
+                raise RuntimeError("Qdrant client not initialized")
 
         except Exception as e:
             logger.error(f"Failed to store products: {e}")
@@ -223,10 +245,16 @@ class StorageManager:
                 )
 
                 # Convert Qdrant results to product format
+                # Filter out results below similarity threshold to avoid non-relevant results
                 products = []
                 for hit in search_result:
+                    # Skip results with low similarity scores
+                    if hit.score < settings.min_similarity_threshold:
+                        logger.debug(f"Skipping result with low similarity: {hit.score:.3f} < {settings.min_similarity_threshold}")
+                        continue
+
                     product_data = {
-                        "id": self._restore_product_id(hit.id),
+                        "id": hit.payload.get("product_id", self._restore_product_id(hit.id)),  # Use original product_id from payload
                         "similarity_score": hit.score,
                         **hit.payload  # Include all product metadata
                     }
@@ -240,8 +268,8 @@ class StorageManager:
                 return products
 
             else:
-                # Mock search results for development
-                return await self._mock_search_results(filters, limit, sort_by)
+                logger.error("No Qdrant client available for search")
+                return []
 
         except Exception as e:
             logger.error(f"Product search failed: {e}")
@@ -252,22 +280,30 @@ class StorageManager:
         Retrieve a specific product by ID from Qdrant.
 
         Args:
-            product_id: Unique product identifier
+            product_id: Unique product identifier (can be original ID or point_XXXXX format)
 
         Returns:
             Product data dictionary or None if not found
 
         Note:
-            Uses Qdrant retrieve method to get product by point ID
-            with full payload information.
+            Handles both original product IDs and point-prefixed IDs returned from search.
         """
         if not self.is_initialized:
             await self.initialize()
 
         try:
             if self.qdrant_client:
-                # Convert product ID to point ID
-                point_id = self._generate_point_id(product_id)
+                # Check if this is a point-prefixed ID (from search results)
+                if product_id.startswith("point_"):
+                    # Extract numeric point ID
+                    try:
+                        point_id = int(product_id[6:])  # Remove "point_" prefix
+                    except ValueError:
+                        logger.error(f"Invalid point ID format: {product_id}")
+                        return None
+                else:
+                    # Convert original product ID to point ID
+                    point_id = self._generate_point_id(product_id)
 
                 # Retrieve point from Qdrant
                 points = await self.qdrant_client.retrieve(
@@ -280,7 +316,7 @@ class StorageManager:
                 if points and len(points) > 0:
                     point = points[0]
                     product_data = {
-                        "id": product_id,
+                        "id": product_id,  # Return the requested ID format
                         **point.payload
                     }
                     return product_data
@@ -295,163 +331,114 @@ class StorageManager:
             logger.error(f"Failed to get product {product_id}: {e}")
             return None
 
-    async def _mock_get_product_by_id(self, product_id: str) -> Optional[Dict[str, Any]]:
-        """Mock product lookup for development."""
-        mock_products = {
-            "amazon_B08N5WRWNW": {
-                "id": "amazon_B08N5WRWNW",
-                "title": "ASUS ROG Zephyrus G14 Gaming Laptop",
-                "price": 1499.99,
-                "currency": "USD",
-                "store": "amazon",
-                "brand": "ASUS",
-                "category": "laptops",
-                "description": "High-performance gaming laptop with RTX 4070 and AMD Ryzen 9 processor.",
-                "rating": 4.5,
-                "reviews_count": 2847,
-                "key_features": ["RTX 4070", "AMD Ryzen 9", "16GB RAM", "1TB SSD"],
-                "specifications": {
-                    "CPU": "AMD Ryzen 9 7940HS",
-                    "GPU": "NVIDIA RTX 4070",
-                    "RAM": "16GB DDR5",
-                    "Storage": "1TB NVMe SSD",
-                    "Display": "14\" QHD 165Hz"
-                },
-                "image_url": "https://example.com/asus_g14.jpg",
-                "product_url": "https://amazon.com/asus-g14",
-                "availability": "in_stock",
-                "last_updated": datetime.utcnow().isoformat()
-            }
-        }
 
-        return mock_products.get(product_id)
-
-    async def get_current_deals(
+    async def process_and_store_products(
         self,
-        limit: int = 50,
-        filters: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
+        products: List[ProductData],
+        embedding_processor
+    ):
         """
-        Get current deals and discounts.
+        Complete pipeline: process products and store with embeddings.
 
         Args:
-            limit: Maximum number of deals
-            filters: Deal filters
+            products: List of ProductData objects
+            embedding_processor: EmbeddingProcessor instance
 
-        Returns:
-            List of current deals
+        Note:
+            This method demonstrates the complete data flow:
+            ProductData → text processing → embeddings → Qdrant storage
         """
-        try:
-            # TODO: Implement actual deals query
-            mock_deals = [
-                {
-                    "product_id": "prod_67890",
-                    "title": "MSI Katana 15 Gaming Laptop",
-                    "original_price": 1599.99,
-                    "current_price": 1299.99,
-                    "discount_amount": 300.00,
-                    "discount_percent": 18.75,
-                    "deal_type": "limited_time",
-                    "expires_at": datetime.utcnow() + timedelta(days=3),
-                    "store": "bestbuy",
-                    "image_url": "https://example.com/deal1.jpg",
-                    "product_url": "https://bestbuy.com/deal1"
-                }
-            ]
+        if not products:
+            logger.warning("No products provided for processing")
+            return
 
-            return mock_deals[:limit]
+        try:
+            logger.info(f"Processing {len(products)} products for storage")
+
+            # Generate text representations for embedding
+            product_texts = []
+            for product in products:
+                text = embedding_processor.process_product_for_embedding(product)
+                product_texts.append(text)
+
+            # Generate embeddings
+            embeddings = await embedding_processor.generate_batch_embeddings(
+                product_texts,
+                batch_size=32
+            )
+
+            # Store in Qdrant
+            await self.store_products(products, embeddings)
+
+            logger.info(f"Successfully processed and stored {len(products)} products")
 
         except Exception as e:
-            logger.error(f"Failed to get deals: {e}")
-            return []
+            logger.error(f"Failed to process and store products: {e}")
+
+    # ============================================================================
+    # PUBLIC API METHODS
+    # ============================================================================
+
 
     async def get_available_categories(self) -> List[Dict[str, Any]]:
         """Get available product categories with counts."""
-        # TODO: Implement actual category query
-        return [
-            {"name": "laptops", "product_count": 1250},
-            {"name": "smartphones", "product_count": 890},
-            {"name": "headphones", "product_count": 650},
-            {"name": "tablets", "product_count": 420}
-        ]
-
-    async def get_available_stores(self) -> List[Dict[str, Any]]:
-        """Get available stores with statistics."""
-        # TODO: Implement actual store query
-        return [
-            {
-                "name": "amazon",
-                "product_count": 2500,
-                "last_collection": datetime.utcnow() - timedelta(hours=1),
-                "api_status": "healthy",
-                "collection_frequency": "hourly"
-            },
-            {
-                "name": "bestbuy",
-                "product_count": 1200,
-                "last_collection": datetime.utcnow() - timedelta(hours=2),
-                "api_status": "healthy",
-                "collection_frequency": "hourly"
-            }
-        ]
-
-    async def test_connection(self):
-        """Test database connections."""
-        # TODO: Implement connection tests
-        pass
-
-    async def perform_maintenance(self):
-        """Perform database maintenance tasks."""
-        logger.info("Starting database maintenance")
-        # TODO: Implement maintenance tasks
-        # - Clean old data
-        # - Optimize indexes
-        # - Update statistics
-        logger.info("Database maintenance completed")
-
-    async def get_collection_info(self) -> Dict[str, Any]:
-        """
-        Get collection statistics and information.
-
-        Returns:
-            Dictionary containing collection statistics
-
-        Note:
-            Uses Qdrant collection info method to get
-            current collection statistics and configuration.
-        """
-        if not self.is_initialized:
-            await self.initialize()
-
         try:
-            if self.qdrant_client:
-                collection_info = await self.qdrant_client.get_collection(self.collection_name)
+            if not self.is_initialized:
+                logger.warning("Storage not initialized, initializing now...")
+                await self.initialize()
 
-                return {
-                    "collection_name": self.collection_name,
-                    "vector_size": collection_info.config.params.vectors.size,
-                    "distance_metric": collection_info.config.params.vectors.distance.value,
-                    "points_count": collection_info.points_count,
-                    "segments_count": collection_info.segments_count,
-                    "indexed_vectors_count": collection_info.indexed_vectors_count,
-                    "status": collection_info.status.value
-                }
+            if not self.qdrant_client:
+                logger.error("No Qdrant client available")
+                return []
 
-            else:
-                # Mock collection info for development
-                return {
-                    "collection_name": self.collection_name,
-                    "vector_size": self.vector_size,
-                    "distance_metric": "Cosine",
-                    "points_count": 0,
-                    "segments_count": 1,
-                    "indexed_vectors_count": 0,
-                    "status": "green"
-                }
+            # Scroll through all products to collect categories
+            # Note: Qdrant doesn't have direct aggregation, so we need to scroll and aggregate
+            category_counts = {}
+            offset = None
+            limit = 100
+
+            while True:
+                # Scroll through products
+                scroll_result = await self.qdrant_client.scroll(
+                    collection_name=self.collection_name,
+                    limit=limit,
+                    offset=offset,
+                    with_payload=True,
+                    with_vectors=False
+                )
+
+                points, next_offset = scroll_result
+
+                # Process each product's category
+                for point in points:
+                    category = point.payload.get("category")
+                    if category:  # Only count non-null categories
+                        category_counts[category] = category_counts.get(category, 0) + 1
+
+                # Check if we have more results
+                if next_offset is None or len(points) < limit:
+                    break
+
+                offset = next_offset
+
+            # Convert to list format
+            categories = [
+                {"name": name, "product_count": count}
+                for name, count in sorted(category_counts.items(), key=lambda x: x[1], reverse=True)
+            ]
+
+            logger.info(f"Found {len(categories)} unique categories")
+            return categories
 
         except Exception as e:
-            logger.error(f"Failed to get collection info: {e}")
-            return {}
+            logger.error(f"Failed to get categories: {e}")
+            # Return empty list on error
+            return []
+
+
+    # ============================================================================
+    # SYSTEM MONITORING & MAINTENANCE
+    # ============================================================================
 
     async def test_connection(self) -> bool:
         """
@@ -508,61 +495,53 @@ class StorageManager:
         except Exception as e:
             logger.error(f"Maintenance failed: {e}")
 
-    async def cleanup(self):
-        """Clean up Qdrant client connection."""
-        try:
-            if self.qdrant_client:
-                await self.qdrant_client.close()
-                self.qdrant_client = None
-
-            self.is_initialized = False
-            logger.info("Storage manager cleaned up successfully")
-
-        except Exception as e:
-            logger.error(f"Error during cleanup: {e}")
-
-    async def process_and_store_products(
-        self,
-        products: List[ProductData],
-        embedding_processor
-    ):
+    async def get_collection_info(self) -> Dict[str, Any]:
         """
-        Complete pipeline: process products and store with embeddings.
+        Get collection statistics and information.
 
-        Args:
-            products: List of ProductData objects
-            embedding_processor: EmbeddingProcessor instance
+        Returns:
+            Dictionary containing collection statistics
 
         Note:
-            This method demonstrates the complete data flow:
-            ProductData → text processing → embeddings → Qdrant storage
+            Uses Qdrant collection info method to get
+            current collection statistics and configuration.
         """
-        if not products:
-            logger.warning("No products provided for processing")
-            return
+        if not self.is_initialized:
+            await self.initialize()
 
         try:
-            logger.info(f"Processing {len(products)} products for storage")
+            if self.qdrant_client:
+                collection_info = await self.qdrant_client.get_collection(self.collection_name)
 
-            # Generate text representations for embedding
-            product_texts = []
-            for product in products:
-                text = embedding_processor.process_product_for_embedding(product)
-                product_texts.append(text)
+                return {
+                    "collection_name": self.collection_name,
+                    "vector_size": collection_info.config.params.vectors.size,
+                    "distance_metric": collection_info.config.params.vectors.distance.value,
+                    "points_count": collection_info.points_count,
+                    "segments_count": collection_info.segments_count,
+                    "indexed_vectors_count": collection_info.indexed_vectors_count,
+                    "status": collection_info.status.value
+                }
 
-            # Generate embeddings
-            embeddings = await embedding_processor.generate_batch_embeddings(
-                product_texts,
-                batch_size=32
-            )
-
-            # Store in Qdrant
-            await self.store_products(products, embeddings)
-
-            logger.info(f"Successfully processed and stored {len(products)} products")
+            else:
+                # Mock collection info for development
+                return {
+                    "collection_name": self.collection_name,
+                    "vector_size": self.vector_size,
+                    "distance_metric": "Cosine",
+                    "points_count": 0,
+                    "segments_count": 1,
+                    "indexed_vectors_count": 0,
+                    "status": "green"
+                }
 
         except Exception as e:
-            logger.error(f"Failed to process and store products: {e}")
+            logger.error(f"Failed to get collection info: {e}")
+            return {}
+
+    # ============================================================================
+    # UTILITIES & HELPERS
+    # ============================================================================
 
     def _build_qdrant_filter(self, filters: Optional[Dict[str, Any]]):
         """
@@ -644,8 +623,7 @@ class StorageManager:
 
     def _restore_product_id(self, point_id: int) -> str:
         """Restore product ID from point ID (simplified approach)."""
-        # For now, use the point ID as string
-        # In production, you might want to store the original ID in payload
+        # Use the point ID as string - original ID is stored in payload
         return f"point_{point_id}"
 
     async def _mock_search_results(
@@ -735,3 +713,150 @@ class StorageManager:
             return sorted(products, key=lambda x: x.get("rating", 0), reverse=True)
         else:  # relevance (default)
             return sorted(products, key=lambda x: x.get("similarity_score", 0), reverse=True)
+
+    # ============================================================================
+    # API-SPECIFIC METHODS
+    # ============================================================================
+
+
+    async def get_current_deals(
+        self,
+        limit: int = 50,
+        filters: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get current deals and price drops by comparing prices with original/historical data.
+
+        Args:
+            limit: Maximum number of deals to return
+            filters: Filtering criteria including min_discount, category
+
+        Returns:
+            List of deal information dictionaries
+        """
+        if not self.is_initialized:
+            logger.error("Storage not initialized")
+            return []
+
+        try:
+            from qdrant_client.models import Filter, FieldCondition, Range, MatchValue
+
+            # Build Qdrant filter conditions
+            filter_conditions = []
+
+            # Filter by category if specified
+            if filters and "category" in filters:
+                filter_conditions.append(
+                    FieldCondition(
+                        key="category",
+                        match=MatchValue(value=filters["category"])
+                    )
+                )
+
+            # Search for products that might have deals (products with original_price > current price)
+            search_result = await self.qdrant_client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=Filter(must=filter_conditions) if filter_conditions else None,
+                limit=limit * 3,  # Get more to filter for actual deals
+                with_payload=True,
+                with_vectors=False
+            )
+
+            deals = []
+            min_discount = filters.get("min_discount", 0) if filters else 0
+
+            for point in search_result[0]:
+                payload = point.payload
+                current_price = payload.get("price", 0)
+                original_price = payload.get("original_price")
+
+                # Skip if no original price data
+                if not original_price or original_price <= current_price:
+                    continue
+
+                # Calculate discount
+                discount_amount = original_price - current_price
+                discount_percent = (discount_amount / original_price) * 100
+
+                # Apply minimum discount filter
+                if discount_percent < min_discount:
+                    continue
+
+                deal = {
+                    "product_id": payload.get("product_id"),  # Use correct field name from Fix #1
+                    "title": payload.get("title"),
+                    "original_price": original_price,
+                    "current_price": current_price,
+                    "discount_amount": round(discount_amount, 2),
+                    "discount_percent": round(discount_percent, 1),
+                    "deal_type": self._determine_deal_type(discount_percent),
+                    "store": payload.get("store"),
+                    "image_url": payload.get("image_url"),
+                    "product_url": payload.get("product_url"),
+                    "expires_at": None  # Would need separate deal expiration tracking
+                }
+                deals.append(deal)
+
+            # Sort by discount percentage (highest first) and return limited results
+            deals.sort(key=lambda x: x["discount_percent"], reverse=True)
+            return deals[:limit]
+
+        except Exception as e:
+            logger.error(f"Failed to retrieve current deals: {e}")
+            return []
+
+
+    async def get_available_stores(self) -> List[Dict[str, Any]]:
+        """
+        Get all available stores/sources with statistics from stored data.
+
+        Returns:
+            List of store information dictionaries
+        """
+        if not self.is_initialized:
+            logger.error("Storage not initialized")
+            return []
+
+        try:
+            # Get all products and aggregate store statistics
+            search_result = await self.qdrant_client.scroll(
+                collection_name=self.collection_name,
+                limit=10000,  # Large limit to get all products
+                with_payload=True,
+                with_vectors=False
+            )
+
+            store_counts = {}
+
+            for point in search_result[0]:
+                store = point.payload.get("store")
+                if store:
+                    store_counts[store] = store_counts.get(store, 0) + 1
+
+            # Convert to list format expected by API
+            stores = []
+            for store_name, count in sorted(store_counts.items()):
+                stores.append({
+                    "name": store_name,
+                    "product_count": count,
+                    "last_collection": None,  # Would need job tracking integration
+                    "api_status": "unknown",  # Would need health check integration
+                    "collection_frequency": "on-demand"  # Based on current trigger-only mode
+                })
+
+            return stores
+
+        except Exception as e:
+            logger.error(f"Failed to retrieve stores: {e}")
+            return []
+
+    def _determine_deal_type(self, discount_percent: float) -> str:
+        """Determine deal type based on discount percentage."""
+        if discount_percent >= 50:
+            return "lightning_deal"
+        elif discount_percent >= 30:
+            return "daily_deal"
+        elif discount_percent >= 15:
+            return "sale"
+        else:
+            return "discount"
