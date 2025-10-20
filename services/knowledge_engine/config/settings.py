@@ -172,6 +172,7 @@ class KnowledgeSettings(BaseSettings):
     class Config:
         """Pydantic configuration."""
         env_prefix = "KNOWLEDGE_"
+        env_file = "config/.env"
         case_sensitive = False
 
     @validator('model_storage_path')
