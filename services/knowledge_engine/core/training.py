@@ -536,21 +536,23 @@ class TrainingManager:
         ]
         return model_name in supported_models
 
-    async def _prepare_training_data(self, dataset_name: str):
+    async def _prepare_training_data(self, dataset_name: str, validation_split: float = 0.1):
         """
-        Prepare training data for the specified dataset.
+        Prepare training data for the specified dataset with train/validation split.
 
         Args:
             dataset_name: Name of the dataset to prepare
+            validation_split: Fraction of data to use for validation (default: 0.1 = 10%)
 
         Returns:
-            HuggingFace Dataset object ready for training
+            Tuple of (train_dataset, eval_dataset) HuggingFace Dataset objects
 
         Note:
             Converts conversation JSON data to instruction-tuned format
             compatible with the base model's expected input format.
+            Splits data into train/validation for best checkpoint selection.
         """
-        logger.info(f"Preparing training data for {dataset_name}")
+        logger.info(f"Preparing training data for {dataset_name} (validation_split={validation_split})")
 
         try:
             from datasets import Dataset
@@ -570,10 +572,31 @@ class TrainingManager:
                     logger.debug(f"Formatted {i + 1}/{len(conversations)} conversations")
 
             # Create HuggingFace Dataset
-            dataset = Dataset.from_list(formatted_data)
+            full_dataset = Dataset.from_list(formatted_data)
 
-            logger.info(f"Prepared {len(dataset)} training examples")
-            return dataset
+            # Split into train and validation
+            if validation_split > 0 and len(full_dataset) > 10:
+                split_dataset = full_dataset.train_test_split(
+                    test_size=validation_split,
+                    seed=42  # Reproducible split
+                )
+                train_dataset = split_dataset["train"]
+                eval_dataset = split_dataset["test"]
+
+                logger.info(
+                    f"Split dataset: {len(train_dataset)} train examples, "
+                    f"{len(eval_dataset)} validation examples"
+                )
+            else:
+                # If dataset too small or no validation requested, use all for training
+                train_dataset = full_dataset
+                eval_dataset = None
+                logger.warning(
+                    f"Dataset too small ({len(full_dataset)} examples) or validation disabled, "
+                    f"using all data for training"
+                )
+
+            return train_dataset, eval_dataset
 
         except Exception as e:
             logger.error(f"Failed to prepare training data: {e}")
@@ -749,8 +772,11 @@ class TrainingManager:
             from trl import SFTTrainer
             import wandb
 
-            # Prepare training dataset
-            train_dataset = await self._prepare_training_data(config["dataset_name"])
+            # Prepare training and validation datasets
+            train_dataset, eval_dataset = await self._prepare_training_data(
+                config["dataset_name"],
+                validation_split=0.1  # 10% validation split
+            )
 
             # Training arguments
             output_dir = os.path.join(settings.model_storage_path, "checkpoints", job_id)
@@ -775,27 +801,57 @@ class TrainingManager:
                 os.environ["WANDB_TAGS"] = "shopsense,qlora,shopping-advisor"
                 logger.info(f"WandB configured: {settings.wandb_entity}/{settings.wandb_project}/{job_id}")
 
+            # Configure evaluation and best checkpoint selection
+            # Only enable if we have validation dataset
+            use_eval = eval_dataset is not None
+            eval_steps = 100 if use_eval else None
+
             training_args = TrainingArguments(
                 output_dir=output_dir,
                 num_train_epochs=config["training_config"]["epochs"],
                 per_device_train_batch_size=config["training_config"]["batch_size"],
                 gradient_accumulation_steps=4,  # Effective batch size = batch_size * 4
                 learning_rate=config["training_config"]["learning_rate"],
+
+                # Logging configuration
                 logging_steps=10,
+                logging_first_step=True,
+                logging_strategy="steps",
+
+                # Checkpoint configuration
                 save_steps=100,
-                save_total_limit=3,
+                save_total_limit=3,  # Keep only best 3 checkpoints
+                save_strategy="steps",
+
+                # Best checkpoint selection (only if validation data available)
+                evaluation_strategy="steps" if use_eval else "no",
+                eval_steps=eval_steps,
+                load_best_model_at_end=use_eval,  # Load best checkpoint at end
+                metric_for_best_model="loss" if use_eval else None,  # Use validation loss
+                greater_is_better=False,  # Lower loss is better
+
+                # Training optimization
                 fp16=use_fp16,  # Platform-optimized mixed precision
                 warmup_ratio=0.05,
                 lr_scheduler_type="cosine",
                 optim=optimizer,  # Platform-optimized optimizer
                 max_grad_norm=0.3,
+
+                # Experiment tracking
                 report_to="wandb" if settings.wandb_api_key else "none",
-                run_name=job_id,
-                logging_first_step=True,
-                logging_strategy="steps",
-                save_strategy="steps",
-                load_best_model_at_end=False
+                run_name=job_id
             )
+
+            if use_eval:
+                logger.info(
+                    f"Best checkpoint strategy enabled: "
+                    f"eval_steps={eval_steps}, metric=loss (lower is better)"
+                )
+            else:
+                logger.warning(
+                    f"Best checkpoint strategy disabled: "
+                    f"no validation data available (using last checkpoint)"
+                )
 
             # Custom callback for progress updates
             class ProgressCallback(TrainerCallback):
@@ -829,6 +885,7 @@ class TrainingManager:
                 model=self.current_model,
                 args=training_args,
                 train_dataset=train_dataset,
+                eval_dataset=eval_dataset,  # Validation dataset for best checkpoint selection
                 processing_class=self.current_tokenizer,  # Renamed from 'tokenizer' in TRL 0.24.0
                 formatting_func=lambda x: x["text"]  # Extract text field from dataset
             )
