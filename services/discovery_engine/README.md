@@ -35,7 +35,6 @@ DISCOVERY_APIFY_API_KEY=your-apify-key
 DISCOVERY_BESTBUY_API_KEY=your-bestbuy-key
 DISCOVERY_RAPIDAPI_KEY=your-rapidapi-key
 DISCOVERY_QDRANT_URL=http://localhost:6333
-DISCOVERY_POSTGRES_URL=postgresql://user:pass@localhost:5432/shopsense
 ```
 
 ### Start Qdrant Vector Database
