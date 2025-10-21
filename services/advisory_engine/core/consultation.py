@@ -48,12 +48,22 @@ class ConsultationEngine:
         Returns:
             Dictionary with consultation advice and recommendations
         """
+        # Convert ConversationMessage objects to dictionaries if needed
+        conversation_dicts = []
+        for msg in conversation_history:
+            if hasattr(msg, 'model_dump'):  # Pydantic v2
+                conversation_dicts.append(msg.model_dump())
+            elif hasattr(msg, 'dict'):  # Pydantic v1
+                conversation_dicts.append(msg.dict())
+            else:
+                conversation_dicts.append(msg)  # Already a dict
+
         # Analyze conversation to extract intent and requirements
-        intent_analysis = self._analyze_conversation_intent(conversation_history)
+        intent_analysis = self._analyze_conversation_intent(conversation_dicts)
 
         # Generate consultation response
         consultation_response = await self.knowledge_client.generate_consultation_response(
-            conversation_history=conversation_history,
+            conversation_history=conversation_dicts,
             user_context=user_context
         )
 
