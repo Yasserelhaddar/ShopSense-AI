@@ -16,9 +16,11 @@ from typing import List, Dict, Any, Optional
 import httpx
 
 from shared.logging import get_logger
+from config.settings import AdvisorySettings
 
 
 logger = get_logger("advisory-service")
+settings = AdvisorySettings()
 
 
 class KnowledgeClient:
@@ -38,7 +40,7 @@ class KnowledgeClient:
         """
         self.base_url = base_url.rstrip("/")
         self.client: Optional[httpx.AsyncClient] = None
-        self.timeout = 30.0
+        self.timeout = settings.http_timeout_seconds
 
     async def initialize(self):
         """
@@ -50,7 +52,10 @@ class KnowledgeClient:
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=self.timeout,
-            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+            limits=httpx.Limits(
+                max_keepalive_connections=settings.http_max_keepalive,
+                max_connections=settings.http_max_connections
+            )
         )
         logger.info(f"Knowledge client initialized for {self.base_url}")
 
@@ -58,7 +63,7 @@ class KnowledgeClient:
         self,
         query: str,
         products: Optional[List[Dict]] = None,
-        model_id: str = "shopping_advisor_production_v2"
+        model_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Get AI-generated advice for a shopping query.
@@ -77,6 +82,10 @@ class KnowledgeClient:
         """
         if not self.client:
             await self.initialize()
+
+        # Use default model ID if not specified
+        if model_id is None:
+            model_id = settings.default_model_id
 
         messages = [
             {
@@ -127,7 +136,7 @@ class KnowledgeClient:
         self,
         conversation_history: List[Dict[str, str]],
         user_context: Optional[Dict[str, Any]] = None,
-        model_id: str = "shopping_advisor_production_v2"
+        model_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Generate a consultation response based on conversation history.
@@ -141,6 +150,10 @@ class KnowledgeClient:
         """
         if not self.client:
             await self.initialize()
+
+        # Use default model ID if not specified
+        if model_id is None:
+            model_id = settings.default_model_id
 
         # Build conversation context
         messages = [
@@ -197,7 +210,7 @@ class KnowledgeClient:
         self,
         products: List[Dict[str, Any]],
         comparison_criteria: List[str],
-        model_id: str = "shopping_advisor_production_v2"
+        model_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Analyze products for detailed comparison.
@@ -211,6 +224,10 @@ class KnowledgeClient:
         """
         if not self.client:
             await self.initialize()
+
+        # Use default model ID if not specified
+        if model_id is None:
+            model_id = settings.default_model_id
 
         analysis_prompt = (
             f"Analyze and compare these {len(products)} products based on "
@@ -271,7 +288,7 @@ class KnowledgeClient:
             await self.initialize()
 
         try:
-            response = await self.client.get("/health", timeout=5.0)
+            response = await self.client.get("/api/v1/health", timeout=5.0)
             return response.status_code == 200
         except Exception as e:
             logger.warning(f"Knowledge Engine health check failed: {e}")

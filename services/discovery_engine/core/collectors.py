@@ -113,8 +113,8 @@ class ApifyCollector:
     def __init__(self):
         """Initialize the Apify collector."""
         self.api_key = settings.apify_api_key
-        self.base_url = "https://api.apify.com/v2"
-        self.actor_id = "BG3WDrGdteHgZgbPK"  # Amazon Product Scraper Actor (junglee/Amazon-crawler)
+        self.base_url = settings.apify_base_url
+        self.actor_id = settings.apify_actor_id
         self.rate_limit = settings.apify_rate_limit or 10
         self.session: Optional[httpx.AsyncClient] = None
         self.rate_limiter = asyncio.Semaphore(self.rate_limit)

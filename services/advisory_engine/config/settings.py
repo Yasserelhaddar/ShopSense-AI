@@ -15,6 +15,10 @@ class AdvisorySettings(BaseSettings):
 
     # Service Configuration
     port: int = Field(default=8003, description="Service port number")
+    allowed_origins: str = Field(
+        default="*",
+        description="Comma-separated list of allowed CORS origins (use '*' for all)"
+    )
 
     # External Service URLs
     knowledge_service_url: str = Field(
@@ -57,14 +61,32 @@ class AdvisorySettings(BaseSettings):
         default=30,
         description="Recommendation generation timeout"
     )
+    default_model_id: str = Field(
+        default="shopping_advisor_production_v2",
+        description="Default model ID for knowledge engine requests"
+    )
 
     # Search Configuration
     max_search_results: int = Field(default=20, description="Max search results")
     search_timeout_seconds: int = Field(default=30, description="Search timeout")
 
     # Performance Configuration
-    http_timeout_seconds: int = Field(default=60, description="HTTP timeout")
-    http_pool_size: int = Field(default=100, description="HTTP pool size")
+    http_timeout_seconds: int = Field(
+        default=60,
+        description="HTTP timeout for service calls in seconds"
+    )
+    http_pool_size: int = Field(
+        default=100,
+        description="HTTP connection pool size"
+    )
+    http_max_keepalive: int = Field(
+        default=5,
+        description="HTTP max keepalive connections"
+    )
+    http_max_connections: int = Field(
+        default=10,
+        description="HTTP max total connections"
+    )
     max_concurrent_calls: int = Field(default=10, description="Max concurrent calls")
 
     # Retry Configuration

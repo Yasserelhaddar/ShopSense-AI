@@ -50,6 +50,10 @@ class KnowledgeSettings(BaseSettings):
 
     # Service Configuration
     port: int = Field(default=8001, description="Service port number")
+    allowed_origins: str = Field(
+        default="*",
+        description="Comma-separated list of allowed CORS origins (use '*' for all)"
+    )
     model_storage_path: str = Field(
         default="/models",
         description="Directory for storing trained models"
@@ -77,10 +81,7 @@ class KnowledgeSettings(BaseSettings):
         default="shopsense-training",
         description="WandB project name"
     )
-    wandb_entity: str = Field(
-        default="shopsense-team",
-        description="WandB entity/team name"
-    )
+    wandb_entity: str = Field(..., description="WandB entity/team name")
 
     # Training Configuration
     max_length: int = Field(
@@ -140,48 +141,15 @@ class KnowledgeSettings(BaseSettings):
         default=None,
         description="AWS secret key for S3 storage"
     )
-    s3_bucket: str = Field(
-        default="shopsense-models",
-        description="S3 bucket for model storage"
+    s3_bucket: Optional[str] = Field(
+        default=None,
+        description="S3 bucket for model storage (required for production)"
     )
     s3_region: str = Field(
         default="us-east-1",
         description="AWS region for S3 bucket"
     )
 
-    # Database Configuration (PostgreSQL for persistence)
-    use_database: bool = Field(
-        default=False,
-        description="Enable PostgreSQL database persistence"
-    )
-    postgres_host: str = Field(
-        default="localhost",
-        description="PostgreSQL host"
-    )
-    postgres_port: int = Field(
-        default=5432,
-        description="PostgreSQL port"
-    )
-    postgres_user: str = Field(
-        default="admin",
-        description="PostgreSQL username"
-    )
-    postgres_password: str = Field(
-        default="password123",
-        description="PostgreSQL password"
-    )
-    postgres_database: str = Field(
-        default="shopsense",
-        description="PostgreSQL database name"
-    )
-    postgres_pool_size: int = Field(
-        default=10,
-        description="PostgreSQL connection pool size"
-    )
-    postgres_max_overflow: int = Field(
-        default=20,
-        description="PostgreSQL max overflow connections"
-    )
 
     # Performance Configuration
     max_concurrent_trainings: int = Field(

@@ -43,9 +43,9 @@ class DiscoverySettings(BaseSettings):
             bestbuy_base_url: Best Buy API base URL
             rapidapi_key: RapidAPI key for additional stores
 
-        Database:
-            postgres_url: PostgreSQL connection URL
+        Cache:
             redis_url: Redis cache connection URL
+            use_redis: Enable Redis caching vs in-memory
 
         Collection:
             collection_batch_size: Products per collection batch
@@ -55,6 +55,10 @@ class DiscoverySettings(BaseSettings):
 
     # Service Configuration
     port: int = Field(default=8002, description="Service port number")
+    allowed_origins: str = Field(
+        default="*",
+        description="Comma-separated list of allowed CORS origins (use '*' for all)"
+    )
     max_concurrent_collections: int = Field(
         default=3,
         ge=1,
@@ -139,11 +143,7 @@ class DiscoverySettings(BaseSettings):
         description="RapidAPI eBay URL"
     )
 
-    # Database Configuration
-    postgres_url: str = Field(
-        default="postgresql://admin:password123@postgres:5432/shopsense",
-        description="PostgreSQL connection URL"
-    )
+    # Cache Configuration (Redis)
     use_redis: bool = Field(
         default=False,
         description="Enable Redis caching (false = in-memory, true = Redis)"
@@ -506,8 +506,7 @@ class DiscoverySettings(BaseSettings):
         """
         production_requirements = [
             self.apify_api_key,
-            self.qdrant_url,
-            self.postgres_url
+            self.qdrant_url
         ]
 
         return all(req for req in production_requirements)
