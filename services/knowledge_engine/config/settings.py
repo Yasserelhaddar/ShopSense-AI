@@ -228,9 +228,7 @@ class KnowledgeSettings(BaseSettings):
         supported_models = [
             "gpt2",
             "mistralai/Mistral-7B-Instruct-v0.2",
-            "microsoft/DialoGPT-medium",
-            "microsoft/DialoGPT-large",
-            "facebook/blenderbot-400M-distill"
+            "microsoft/DialoGPT-medium"
         ]
 
         if v not in supported_models:
