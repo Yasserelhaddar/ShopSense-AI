@@ -307,10 +307,54 @@ class ModelEvaluator:
         Returns:
             Accuracy score between 0 and 1
         """
-        # TODO: Implement actual accuracy evaluation
-        # For now, return a mock accuracy score
-        accuracy = 0.87 + (hash(model_id) % 100) / 1000  # Deterministic but varied
-        logger.info(f"Accuracy evaluation: {accuracy:.3f}")
+        from core.training import TrainingManager
+
+        training_manager = TrainingManager()
+
+        correct_responses = 0
+        total_responses = 0
+
+        for conversation in test_conversations:
+            try:
+                # Extract user message and expected response
+                messages = conversation.get("messages", [])
+                if len(messages) < 2:
+                    continue
+
+                # Get user messages only (exclude assistant responses)
+                user_messages = [msg for msg in messages if msg["role"] == "user"]
+                expected_response = conversation.get("expected_response", "")
+
+                if not user_messages:
+                    continue
+
+                # Run inference with the model
+                result = await training_manager.run_inference(
+                    model_id=model_id,
+                    messages=user_messages,
+                    max_tokens=150,
+                    temperature=0.7
+                )
+
+                generated_response = result.get("content", "")
+
+                # Simple accuracy check: response should be non-empty and coherent
+                # For better accuracy, we'd compare with expected_response using semantic similarity
+                if generated_response and len(generated_response.strip()) > 10:
+                    # Basic check: response should not be repetitive gibberish
+                    words = generated_response.split()
+                    unique_words = set(words)
+                    if len(unique_words) > len(words) * 0.3:  # At least 30% unique words
+                        correct_responses += 1
+
+                total_responses += 1
+
+            except Exception as e:
+                logger.warning(f"Error evaluating conversation: {e}")
+                continue
+
+        accuracy = correct_responses / total_responses if total_responses > 0 else 0.0
+        logger.info(f"Accuracy evaluation: {accuracy:.3f} ({correct_responses}/{total_responses} responses)")
         return accuracy
 
     async def _evaluate_perplexity(
@@ -328,9 +372,75 @@ class ModelEvaluator:
         Returns:
             Perplexity score (lower is better)
         """
-        # TODO: Implement actual perplexity calculation
-        perplexity = 2.1 + (hash(model_id) % 50) / 100
-        logger.info(f"Perplexity evaluation: {perplexity:.3f}")
+        try:
+            import torch
+            import math
+        except ImportError:
+            logger.warning("torch not available, returning default perplexity")
+            return 10.0
+
+        from core.training import TrainingManager
+
+        training_manager = TrainingManager()
+        total_loss = 0.0
+        total_tokens = 0
+
+        for conversation in test_conversations:
+            try:
+                messages = conversation.get("messages", [])
+                if len(messages) < 2:
+                    continue
+
+                # Get assistant response to calculate perplexity on
+                assistant_messages = [msg for msg in messages if msg["role"] == "assistant"]
+                if not assistant_messages:
+                    continue
+
+                target_text = assistant_messages[0]["content"]
+
+                # This is a simplified perplexity calculation
+                # In production, we'd want to use the model's actual forward pass
+                # For now, use inference and estimate based on response quality
+                user_messages = [msg for msg in messages if msg["role"] == "user"]
+                if not user_messages:
+                    continue
+
+                result = await training_manager.run_inference(
+                    model_id=model_id,
+                    messages=user_messages,
+                    max_tokens=len(target_text.split()),
+                    temperature=0.7
+                )
+
+                # Simplified perplexity estimation based on output quality
+                # This is not the true perplexity but a proxy measure
+                generated_text = result.get("content", "")
+
+                # Calculate a rough similarity score
+                gen_words = set(generated_text.lower().split())
+                target_words = set(target_text.lower().split())
+
+                if len(target_words) > 0:
+                    overlap = len(gen_words & target_words) / len(target_words)
+                    # Convert overlap to a perplexity-like score (lower is better)
+                    # High overlap = low perplexity, low overlap = high perplexity
+                    estimated_loss = -math.log(max(overlap, 0.01))  # Avoid log(0)
+                    total_loss += estimated_loss
+                    total_tokens += 1
+
+            except Exception as e:
+                logger.warning(f"Error calculating perplexity for conversation: {e}")
+                continue
+
+        if total_tokens == 0:
+            logger.warning("No valid conversations for perplexity calculation")
+            return 10.0
+
+        # Calculate average perplexity
+        avg_loss = total_loss / total_tokens
+        perplexity = math.exp(avg_loss)
+
+        logger.info(f"Perplexity evaluation: {perplexity:.3f} ({total_tokens} conversations)")
         return perplexity
 
     async def _evaluate_bleu(
@@ -348,9 +458,62 @@ class ModelEvaluator:
         Returns:
             BLEU score between 0 and 1
         """
-        # TODO: Implement BLEU score calculation
-        bleu_score = 0.75 + (hash(model_id) % 200) / 1000
-        logger.info(f"BLEU score evaluation: {bleu_score:.3f}")
+        try:
+            from sacrebleu import corpus_bleu
+        except ImportError:
+            logger.warning("sacrebleu not installed, returning default score")
+            return 0.0
+
+        from core.training import TrainingManager
+
+        training_manager = TrainingManager()
+        references = []
+        hypotheses = []
+
+        for conversation in test_conversations:
+            try:
+                messages = conversation.get("messages", [])
+                if len(messages) < 2:
+                    continue
+
+                # Get user messages and expected response
+                user_messages = [msg for msg in messages if msg["role"] == "user"]
+                expected_response = conversation.get("expected_response", "")
+
+                # Get assistant response from conversation as reference
+                assistant_messages = [msg for msg in messages if msg["role"] == "assistant"]
+                if not user_messages or not assistant_messages:
+                    continue
+
+                reference = assistant_messages[0]["content"]
+
+                # Run inference with the model
+                result = await training_manager.run_inference(
+                    model_id=model_id,
+                    messages=user_messages,
+                    max_tokens=150,
+                    temperature=0.7
+                )
+
+                hypothesis = result.get("content", "").strip()
+
+                if hypothesis and reference:
+                    hypotheses.append(hypothesis)
+                    references.append([reference])  # BLEU expects list of references
+
+            except Exception as e:
+                logger.warning(f"Error evaluating conversation for BLEU: {e}")
+                continue
+
+        if not hypotheses or not references:
+            logger.warning("No valid conversation pairs for BLEU evaluation")
+            return 0.0
+
+        # Calculate corpus BLEU score
+        bleu_result = corpus_bleu(hypotheses, references)
+        bleu_score = bleu_result.score / 100.0  # Convert to 0-1 scale
+
+        logger.info(f"BLEU score evaluation: {bleu_score:.3f} ({len(hypotheses)} conversations)")
         return bleu_score
 
     async def _evaluate_rouge(
@@ -368,10 +531,70 @@ class ModelEvaluator:
         Returns:
             ROUGE score between 0 and 1
         """
-        # TODO: Implement ROUGE score calculation
-        rouge_score = 0.72 + (hash(model_id) % 250) / 1000
-        logger.info(f"ROUGE score evaluation: {rouge_score:.3f}")
-        return rouge_score
+        try:
+            from rouge_score import rouge_scorer
+        except ImportError:
+            logger.warning("rouge-score not installed, returning default score")
+            return 0.0
+
+        from core.training import TrainingManager
+
+        training_manager = TrainingManager()
+        scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
+
+        rouge1_scores = []
+        rouge2_scores = []
+        rougeL_scores = []
+
+        for conversation in test_conversations:
+            try:
+                messages = conversation.get("messages", [])
+                if len(messages) < 2:
+                    continue
+
+                # Get user messages and assistant response as reference
+                user_messages = [msg for msg in messages if msg["role"] == "user"]
+                assistant_messages = [msg for msg in messages if msg["role"] == "assistant"]
+
+                if not user_messages or not assistant_messages:
+                    continue
+
+                reference = assistant_messages[0]["content"]
+
+                # Run inference with the model
+                result = await training_manager.run_inference(
+                    model_id=model_id,
+                    messages=user_messages,
+                    max_tokens=150,
+                    temperature=0.7
+                )
+
+                hypothesis = result.get("content", "").strip()
+
+                if hypothesis and reference:
+                    scores = scorer.score(reference, hypothesis)
+                    rouge1_scores.append(scores['rouge1'].fmeasure)
+                    rouge2_scores.append(scores['rouge2'].fmeasure)
+                    rougeL_scores.append(scores['rougeL'].fmeasure)
+
+            except Exception as e:
+                logger.warning(f"Error evaluating conversation for ROUGE: {e}")
+                continue
+
+        if not rouge1_scores:
+            logger.warning("No valid conversation pairs for ROUGE evaluation")
+            return 0.0
+
+        # Average ROUGE-L score (most commonly used)
+        avg_rougeL = sum(rougeL_scores) / len(rougeL_scores)
+
+        logger.info(
+            f"ROUGE score evaluation: ROUGE-L={avg_rougeL:.3f}, "
+            f"ROUGE-1={sum(rouge1_scores)/len(rouge1_scores):.3f}, "
+            f"ROUGE-2={sum(rouge2_scores)/len(rouge2_scores):.3f} "
+            f"({len(rougeL_scores)} conversations)"
+        )
+        return avg_rougeL
 
     async def _evaluate_shopping_relevance(
         self,
@@ -388,10 +611,108 @@ class ModelEvaluator:
         Returns:
             Shopping relevance score between 0 and 1
         """
-        # TODO: Implement shopping-specific relevance evaluation
-        relevance = 0.82 + (hash(model_id) % 150) / 1000
-        logger.info(f"Shopping relevance evaluation: {relevance:.3f}")
-        return relevance
+        from core.training import TrainingManager
+
+        # Shopping-domain keywords and concepts
+        shopping_keywords = {
+            # Product categories
+            'product', 'item', 'laptop', 'phone', 'computer', 'tablet', 'camera',
+            'headphones', 'watch', 'tv', 'monitor', 'keyboard', 'mouse', 'speaker',
+            'gaming', 'smartphone', 'electronics', 'appliance', 'furniture', 'clothing',
+
+            # Brands
+            'apple', 'samsung', 'sony', 'dell', 'hp', 'lenovo', 'asus', 'acer',
+            'microsoft', 'google', 'amazon', 'nike', 'adidas', 'lg', 'panasonic',
+
+            # Shopping actions
+            'buy', 'purchase', 'order', 'shop', 'browse', 'recommend', 'suggest',
+            'compare', 'review', 'rating', 'return', 'refund', 'warranty', 'delivery',
+
+            # Product attributes
+            'price', 'cost', 'budget', 'cheap', 'expensive', 'affordable', 'discount',
+            'sale', 'deal', 'offer', 'specification', 'feature', 'quality', 'brand',
+            'model', 'version', 'size', 'color', 'weight', 'dimension', 'performance',
+
+            # Shopping context
+            'store', 'online', 'shipping', 'stock', 'available', 'in-stock',
+            'out-of-stock', 'pre-order', 'bestseller', 'popular', 'trending',
+
+            # Technical specs
+            'cpu', 'gpu', 'ram', 'storage', 'battery', 'screen', 'display', 'camera',
+            'processor', 'memory', 'ssd', 'hdd', 'gb', 'tb', 'inch', 'resolution',
+            'ghz', 'cores', 'rtx', 'gtx', 'intel', 'amd', 'nvidia'
+        }
+
+        training_manager = TrainingManager()
+        total_relevance = 0.0
+        total_responses = 0
+
+        for conversation in test_conversations:
+            try:
+                messages = conversation.get("messages", [])
+                if len(messages) < 2:
+                    continue
+
+                # Get user messages
+                user_messages = [msg for msg in messages if msg["role"] == "user"]
+                if not user_messages:
+                    continue
+
+                # Run inference with the model
+                result = await training_manager.run_inference(
+                    model_id=model_id,
+                    messages=user_messages,
+                    max_tokens=150,
+                    temperature=0.7
+                )
+
+                generated_response = result.get("content", "").lower()
+
+                if not generated_response:
+                    continue
+
+                # Count shopping keywords in response
+                words_in_response = set(generated_response.split())
+                matching_keywords = shopping_keywords & words_in_response
+
+                # Calculate relevance score
+                # If response has at least 10% of keywords, it's highly relevant
+                # Scale based on keyword density
+                keyword_count = len(matching_keywords)
+                word_count = len(generated_response.split())
+
+                if word_count > 0:
+                    # Keyword density (keywords per 100 words)
+                    density = (keyword_count / word_count) * 100
+
+                    # Score based on density
+                    # 0-2%: low relevance (0.0-0.3)
+                    # 2-5%: medium relevance (0.3-0.6)
+                    # 5-10%: high relevance (0.6-0.9)
+                    # 10%+: very high relevance (0.9-1.0)
+                    if density >= 10:
+                        relevance_score = min(1.0, 0.9 + (density - 10) / 100)
+                    elif density >= 5:
+                        relevance_score = 0.6 + (density - 5) * 0.06
+                    elif density >= 2:
+                        relevance_score = 0.3 + (density - 2) * 0.1
+                    else:
+                        relevance_score = density * 0.15
+
+                    total_relevance += relevance_score
+                    total_responses += 1
+
+            except Exception as e:
+                logger.warning(f"Error evaluating shopping relevance: {e}")
+                continue
+
+        if total_responses == 0:
+            logger.warning("No valid responses for shopping relevance evaluation")
+            return 0.0
+
+        avg_relevance = total_relevance / total_responses
+        logger.info(f"Shopping relevance evaluation: {avg_relevance:.3f} ({total_responses} responses)")
+        return avg_relevance
 
     async def _calculate_overall_score(self, metrics: Dict[str, float]) -> float:
         """
