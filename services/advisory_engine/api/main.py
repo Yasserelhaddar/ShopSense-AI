@@ -80,6 +80,12 @@ async def lifespan(app: FastAPI):
     )
     await consultation_engine.initialize()
 
+    # Make engines and clients available to routes through app state
+    app.state.knowledge_client = knowledge_client
+    app.state.discovery_client = discovery_client
+    app.state.recommendation_engine = recommendation_engine
+    app.state.consultation_engine = consultation_engine
+
     # Test service connections
     await test_service_connections()
 
@@ -196,18 +202,14 @@ async def root():
     }
 
 
-# Make engines and clients available to routes
-app.state.knowledge_client = knowledge_client
-app.state.discovery_client = discovery_client
-app.state.recommendation_engine = recommendation_engine
-app.state.consultation_engine = consultation_engine
+# App state is set in lifespan function after initialization
 
 
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "main:app",
+        "api.main:app",
         host="0.0.0.0",
         port=settings.port,
         reload=settings.debug,
