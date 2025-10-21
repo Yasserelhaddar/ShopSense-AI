@@ -82,7 +82,7 @@ class DiscoveryClient:
             await self.initialize()
 
         try:
-            response = await self.client.get("/health", timeout=5.0)
+            response = await self.client.get("/api/v1/health", timeout=5.0)
             return response.status_code == 200
         except Exception:
             return False
