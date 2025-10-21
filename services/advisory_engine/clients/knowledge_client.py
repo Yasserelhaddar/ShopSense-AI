@@ -58,7 +58,7 @@ class KnowledgeClient:
         self,
         query: str,
         products: Optional[List[Dict]] = None,
-        model_id: str = "shopsense-v1"
+        model_id: str = "shopping_advisor_production_v2"
     ) -> Dict[str, Any]:
         """
         Get AI-generated advice for a shopping query.
@@ -126,7 +126,8 @@ class KnowledgeClient:
     async def generate_consultation_response(
         self,
         conversation_history: List[Dict[str, str]],
-        user_context: Optional[Dict[str, Any]] = None
+        user_context: Optional[Dict[str, Any]] = None,
+        model_id: str = "shopping_advisor_production_v2"
     ) -> Dict[str, Any]:
         """
         Generate a consultation response based on conversation history.
@@ -169,7 +170,7 @@ class KnowledgeClient:
 
         try:
             response = await self.client.post(
-                "/api/v1/models/shopsense-v1/inference",
+                f"/api/v1/models/{model_id}/inference",
                 json=payload
             )
             response.raise_for_status()
@@ -195,7 +196,8 @@ class KnowledgeClient:
     async def analyze_products_for_comparison(
         self,
         products: List[Dict[str, Any]],
-        comparison_criteria: List[str]
+        comparison_criteria: List[str],
+        model_id: str = "shopping_advisor_production_v2"
     ) -> Dict[str, Any]:
         """
         Analyze products for detailed comparison.
@@ -236,7 +238,7 @@ class KnowledgeClient:
 
         try:
             response = await self.client.post(
-                "/api/v1/models/shopsense-v1/inference",
+                f"/api/v1/models/{model_id}/inference",
                 json=payload
             )
             response.raise_for_status()

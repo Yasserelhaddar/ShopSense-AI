@@ -91,6 +91,7 @@ class SearchRequest(BaseModel):
         use_cases: Intended use cases
         max_results: Maximum number of results
         include_alternatives: Include alternative suggestions
+        model_id: Knowledge Engine model ID to use for inference
     """
     query: str = Field(..., description="Search query")
     user_preferences: Optional[UserPreferences] = Field(None, description="User preferences")
@@ -98,6 +99,7 @@ class SearchRequest(BaseModel):
     use_cases: List[str] = Field(default_factory=list, description="Use cases")
     max_results: int = Field(default=10, ge=1, le=50, description="Maximum results")
     include_alternatives: bool = Field(default=True, description="Include alternatives")
+    model_id: Optional[str] = Field(default="shopping_advisor_production_v2", description="Model ID for inference")
 
 
 class SearchResponse(BaseModel):
@@ -129,11 +131,13 @@ class AdviceRequest(BaseModel):
         user_context: Additional user context
         specific_questions: Specific questions to address
         consultation_type: Type of consultation needed
+        model_id: Knowledge Engine model ID to use for inference
     """
     conversation_history: List[ConversationMessage] = Field(..., description="Conversation history")
     user_context: Optional[Dict[str, Any]] = Field(None, description="User context")
     specific_questions: List[str] = Field(default_factory=list, description="Specific questions")
     consultation_type: str = Field(default="general", description="Consultation type")
+    model_id: Optional[str] = Field(default="shopping_advisor_production_v2", description="Model ID for inference")
 
 
 class AdviceResponse(BaseModel):
@@ -179,11 +183,13 @@ class ComparisonRequest(BaseModel):
         comparison_criteria: Comparison criteria and weights
         user_preferences: User preferences for comparison
         include_alternatives: Include alternative suggestions
+        model_id: Knowledge Engine model ID to use for inference
     """
     product_ids: List[str] = Field(..., min_items=2, max_items=5, description="Product IDs")
     comparison_criteria: ComparisonCriteria = Field(..., description="Comparison criteria")
     user_preferences: Optional[UserPreferences] = Field(None, description="User preferences")
     include_alternatives: bool = Field(default=False, description="Include alternatives")
+    model_id: Optional[str] = Field(default="shopping_advisor_production_v2", description="Model ID for inference")
 
 
 class ProductComparison(BaseModel):
