@@ -22,6 +22,11 @@ dependencies = [
     "trl>=0.7.0",  # Transformer Reinforcement Learning (SFTTrainer)
     "datasets>=2.16.0",  # HuggingFace datasets
 
+    # Evaluation Metrics
+    "sacrebleu>=2.3.0",  # BLEU score calculation
+    "rouge-score>=0.1.2",  # ROUGE score calculation
+    "nltk>=3.8.0",  # Natural language toolkit
+
     # External APIs
     "openai>=1.0.0",
     "wandb>=0.16.0",
