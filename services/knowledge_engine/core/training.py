@@ -766,26 +766,14 @@ class TrainingManager:
                 f"Optimizer={optimizer}, Device={platform_config.get('device', 'unknown')}"
             )
 
-            # Initialize WandB BEFORE TrainingArguments to control project/entity
-            wandb_run = None
+            # Set WandB environment variables BEFORE TrainingArguments
+            # This ensures Trainer uses our project/entity settings
             if settings.wandb_api_key:
-                try:
-                    wandb_run = wandb.init(
-                        project=settings.wandb_project,
-                        entity=settings.wandb_entity,
-                        name=job_id,
-                        config={
-                            "base_model": config["base_model"],
-                            "dataset": config["dataset_name"],
-                            **config["training_config"],
-                            "platform": platform_config
-                        },
-                        tags=["shopsense", "qlora", "shopping-advisor"]
-                    )
-                    self.active_jobs[job_id]["wandb_url"] = wandb_run.url
-                    logger.info(f"WandB tracking initialized: {wandb_run.url}")
-                except Exception as e:
-                    logger.warning(f"WandB initialization failed: {e}, continuing without tracking")
+                os.environ["WANDB_PROJECT"] = settings.wandb_project
+                os.environ["WANDB_ENTITY"] = settings.wandb_entity
+                os.environ["WANDB_NAME"] = job_id
+                os.environ["WANDB_TAGS"] = "shopsense,qlora,shopping-advisor"
+                logger.info(f"WandB configured: {settings.wandb_entity}/{settings.wandb_project}/{job_id}")
 
             training_args = TrainingArguments(
                 output_dir=output_dir,
@@ -858,8 +846,8 @@ class TrainingManager:
             trainer.save_model(final_model_dir)
             self.current_tokenizer.save_pretrained(final_model_dir)
 
-            # Finish WandB run
-            if wandb_run:
+            # Finish WandB run (Trainer handles WandB lifecycle)
+            if settings.wandb_api_key:
                 wandb.finish()
 
             logger.info(f"Training completed successfully for job {job_id}")
