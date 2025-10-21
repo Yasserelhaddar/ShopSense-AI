@@ -77,6 +77,10 @@ class DiscoverySettings(BaseSettings):
         le=1536,
         description="Vector dimension size"
     )
+    qdrant_distance: str = Field(
+        default="Cosine",
+        description="Distance metric (Cosine, Euclidean, Dot)"
+    )
 
     # Embedding Model Configuration
     embedding_model_name: str = Field(
@@ -89,9 +93,21 @@ class DiscoverySettings(BaseSettings):
         le=1536,
         description="Embedding vector dimensions"
     )
+    embedding_device: str = Field(
+        default="auto",
+        description="Device for model inference (cuda, cpu, auto)"
+    )
 
     # External API Configuration - Apify
     apify_api_key: str = Field(..., description="Apify API key")
+    apify_base_url: str = Field(
+        default="https://api.apify.com/v2",
+        description="Apify API base URL"
+    )
+    apify_actor_id: str = Field(
+        default="BG3WDrGdteHgZgbPK",
+        description="Apify Actor ID for Amazon Product Scraper"
+    )
     apify_rate_limit: int = Field(
         default=10,
         ge=1,
@@ -128,9 +144,29 @@ class DiscoverySettings(BaseSettings):
         default="postgresql://admin:password123@postgres:5432/shopsense",
         description="PostgreSQL connection URL"
     )
+    use_redis: bool = Field(
+        default=False,
+        description="Enable Redis caching (false = in-memory, true = Redis)"
+    )
     redis_url: str = Field(
         default="redis://redis:6379",
         description="Redis connection URL"
+    )
+    redis_host: str = Field(
+        default="localhost",
+        description="Redis host"
+    )
+    redis_port: int = Field(
+        default=6379,
+        ge=1,
+        le=65535,
+        description="Redis port"
+    )
+    redis_db: int = Field(
+        default=0,
+        ge=0,
+        le=15,
+        description="Redis database number"
     )
 
     # Collection Configuration
@@ -138,11 +174,23 @@ class DiscoverySettings(BaseSettings):
         default="triggered",
         description="Collection strategy: 'triggered' (manual only) or 'hybrid' (manual + scheduled)"
     )
+    max_products: int = Field(
+        default=100,
+        ge=1,
+        le=10000,
+        description="Maximum products to collect globally"
+    )
     collection_batch_size: int = Field(
         default=100,
         ge=10,
         le=1000,
         description="Products per collection batch"
+    )
+    collection_timeout_seconds: int = Field(
+        default=1800,
+        ge=60,
+        le=7200,
+        description="Collection timeout in seconds"
     )
     collection_interval_hours: int = Field(
         default=1,
@@ -186,6 +234,12 @@ class DiscoverySettings(BaseSettings):
         le=500,
         description="Maximum search result limit"
     )
+    similarity_threshold: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="Similarity threshold (0.0 to 1.0, results below this are filtered)"
+    )
     min_similarity_threshold: float = Field(
         default=0.2,
         ge=0.0,
@@ -194,6 +248,12 @@ class DiscoverySettings(BaseSettings):
     )
 
     # Cache Configuration
+    cache_ttl: int = Field(
+        default=3600,
+        ge=60,
+        le=86400,
+        description="Cache TTL in seconds"
+    )
     cache_ttl_seconds: int = Field(
         default=900,  # 15 minutes
         ge=60,
@@ -203,6 +263,32 @@ class DiscoverySettings(BaseSettings):
     search_cache_enabled: bool = Field(
         default=True,
         description="Enable search result caching"
+    )
+
+    # Performance Configuration
+    max_concurrent_searches: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum concurrent search requests"
+    )
+    search_timeout_seconds: int = Field(
+        default=30,
+        ge=5,
+        le=300,
+        description="Search timeout in seconds"
+    )
+    http_timeout_seconds: int = Field(
+        default=60,
+        ge=5,
+        le=600,
+        description="HTTP client timeout in seconds"
+    )
+    http_pool_size: int = Field(
+        default=100,
+        ge=10,
+        le=1000,
+        description="HTTP client connection pool size"
     )
 
     # Data Quality Configuration
