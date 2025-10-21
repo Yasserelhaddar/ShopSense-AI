@@ -90,8 +90,11 @@ class RecommendationEngine:
 
         processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
 
+        # Transform products to ProductRecommendation format
+        recommendations = self._transform_products_to_recommendations(products, query)
+
         return {
-            "products": products,
+            "products": recommendations,
             "advice": ai_response.get("advice", ""),
             "follow_ups": follow_ups,
             "insights": insights,
@@ -223,3 +226,115 @@ class RecommendationEngine:
             }
 
         return analysis
+
+    def _transform_products_to_recommendations(
+        self,
+        products: List[Dict[str, Any]],
+        query: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Transform Discovery Engine products to ProductRecommendation format.
+
+        Args:
+            products: Raw products from Discovery Engine
+            query: User search query for generating recommendations
+
+        Returns:
+            List of products in ProductRecommendation format
+        """
+        recommendations = []
+
+        for product in products:
+            # Map Discovery Engine fields to ProductRecommendation fields
+            recommendation = {
+                "product_id": product.get("id", ""),
+                "title": product.get("title", ""),
+                "price": product.get("price", 0.0),
+                "store": product.get("store", ""),
+                "rating": product.get("rating"),
+                "image_url": product.get("image_url"),
+                "product_url": product.get("product_url"),
+                "match_score": product.get("similarity_score", 0.0),
+                "why_recommended": self._generate_recommendation_reason(product, query),
+                "key_benefits": self._extract_key_benefits(product)
+            }
+
+            recommendations.append(recommendation)
+
+        return recommendations
+
+    def _generate_recommendation_reason(
+        self,
+        product: Dict[str, Any],
+        query: str
+    ) -> str:
+        """
+        Generate a reason why this product is recommended.
+
+        Args:
+            product: Product details
+            query: User search query
+
+        Returns:
+            Recommendation reason string
+        """
+        reasons = []
+
+        # Check similarity score
+        similarity = product.get("similarity_score", 0)
+        if similarity > 0.7:
+            reasons.append("Highly relevant to your search")
+        elif similarity > 0.5:
+            reasons.append("Good match for your needs")
+        else:
+            reasons.append("Matches your query")
+
+        # Check rating
+        rating = product.get("rating")
+        if rating and rating >= 4.5:
+            reasons.append(f"excellent {rating:.1f} star rating")
+        elif rating and rating >= 4.0:
+            reasons.append(f"strong {rating:.1f} star rating")
+
+        # Check price
+        price = product.get("price", 0)
+        if price > 0:
+            if price < 100:
+                reasons.append("affordable price point")
+            elif price > 1000:
+                reasons.append("premium option")
+
+        return ", ".join(reasons) if reasons else "Matches your search criteria"
+
+    def _extract_key_benefits(self, product: Dict[str, Any]) -> List[str]:
+        """
+        Extract key benefits from product data.
+
+        Args:
+            product: Product details
+
+        Returns:
+            List of key benefits
+        """
+        benefits = []
+
+        # Add rating benefit
+        rating = product.get("rating")
+        if rating and rating >= 4.0:
+            benefits.append(f"{rating:.1f}★ customer rating")
+
+        # Add store benefit
+        store = product.get("store", "")
+        if store:
+            benefits.append(f"Available at {store}")
+
+        # Add price benefit (if competitive)
+        price = product.get("price", 0)
+        if price > 0:
+            benefits.append(f"${price:.2f}")
+
+        # Generic benefits if we don't have enough
+        if len(benefits) < 2:
+            benefits.append("Quality product")
+
+        return benefits[:3]  # Return top 3 benefits
