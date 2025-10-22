@@ -20,6 +20,24 @@ class AdvisorySettings(BaseSettings):
         description="Comma-separated list of allowed CORS origins (use '*' for all)"
     )
 
+    # Authentication Configuration (Clerk)
+    clerk_publishable_key: Optional[str] = Field(
+        default=None,
+        description="Clerk publishable key (safe for frontend)"
+    )
+    clerk_secret_key: Optional[str] = Field(
+        default=None,
+        description="Clerk secret key (backend only)"
+    )
+    clerk_issuer: Optional[str] = Field(
+        default=None,
+        description="Clerk JWT issuer URL"
+    )
+    auth_enabled: bool = Field(
+        default=False,
+        description="Enable authentication (requires Clerk keys)"
+    )
+
     # External Service URLs
     knowledge_service_url: str = Field(
         default="http://knowledge-service:8001",

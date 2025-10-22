@@ -21,8 +21,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from shared.logging import setup_logger
 from config.settings import AdvisorySettings
 from api.routes import router
+from api.middleware import ClerkAuthMiddleware
 from clients.knowledge_client import KnowledgeClient
 from clients.discovery_client import DiscoveryClient
+from clients.clerk_client import ClerkUserClient
+from clients.redis_user_client import RedisUserClient
 from core.recommendations import RecommendationEngine
 from core.consultation import ConsultationEngine
 
@@ -34,6 +37,8 @@ logger = setup_logger("advisory-service", settings.log_level)
 # Global clients and engines
 knowledge_client = None
 discovery_client = None
+clerk_user_client = None
+redis_user_client = None
 recommendation_engine = None
 consultation_engine = None
 
@@ -52,7 +57,7 @@ async def lifespan(app: FastAPI):
     Yields:
         None during application runtime
     """
-    global knowledge_client, discovery_client, recommendation_engine, consultation_engine
+    global knowledge_client, discovery_client, clerk_user_client, redis_user_client, recommendation_engine, consultation_engine
 
     # Startup
     logger.info("Starting Advisory Service...")
@@ -67,22 +72,41 @@ async def lifespan(app: FastAPI):
     discovery_client = DiscoveryClient(settings.discovery_service_url)
     await discovery_client.initialize()
 
+    # Initialize Clerk user client if auth is enabled
+    if settings.auth_enabled and settings.clerk_secret_key:
+        clerk_user_client = ClerkUserClient(settings.clerk_secret_key)
+        logger.info("Clerk user client initialized")
+    else:
+        clerk_user_client = None
+        logger.warning("Clerk user client not initialized - auth disabled or no secret key")
+
+    # Initialize Redis user client for historical data
+    redis_user_client = RedisUserClient(settings.redis_url)
+    await redis_user_client.initialize()
+    logger.info("Redis user client initialized")
+
     # Initialize recommendation and consultation engines
     recommendation_engine = RecommendationEngine(
         knowledge_client=knowledge_client,
-        discovery_client=discovery_client
+        discovery_client=discovery_client,
+        clerk_client=clerk_user_client,
+        redis_client=redis_user_client
     )
     await recommendation_engine.initialize()
 
     consultation_engine = ConsultationEngine(
         knowledge_client=knowledge_client,
-        discovery_client=discovery_client
+        discovery_client=discovery_client,
+        clerk_client=clerk_user_client,
+        redis_client=redis_user_client
     )
     await consultation_engine.initialize()
 
     # Make engines and clients available to routes through app state
     app.state.knowledge_client = knowledge_client
     app.state.discovery_client = discovery_client
+    app.state.clerk_user_client = clerk_user_client
+    app.state.redis_user_client = redis_user_client
     app.state.recommendation_engine = recommendation_engine
     app.state.consultation_engine = consultation_engine
 
@@ -146,13 +170,16 @@ async def cleanup_resources():
     Properly closes service clients, clears caches, and releases
     any held resources.
     """
-    global knowledge_client, discovery_client, recommendation_engine, consultation_engine
+    global knowledge_client, discovery_client, redis_user_client, recommendation_engine, consultation_engine
 
     if knowledge_client:
         await knowledge_client.cleanup()
 
     if discovery_client:
         await discovery_client.cleanup()
+
+    if redis_user_client:
+        await redis_user_client.cleanup()
 
     if recommendation_engine:
         await recommendation_engine.cleanup()
@@ -181,6 +208,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add Clerk authentication middleware
+app.add_middleware(ClerkAuthMiddleware, settings=settings)
+
+# Log authentication status
+if settings.auth_enabled:
+    logger.info("Authentication is ENABLED via Clerk")
+else:
+    logger.warning("Authentication is DISABLED - all endpoints are public")
 
 # Include API routes
 app.include_router(router, prefix="/api/v1")

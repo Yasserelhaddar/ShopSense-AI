@@ -22,10 +22,20 @@ class ConsultationEngine:
     personalized shopping advice and recommendations.
     """
 
-    def __init__(self, knowledge_client, discovery_client):
-        """Initialize the consultation engine."""
+    def __init__(self, knowledge_client, discovery_client, clerk_client=None, redis_client=None):
+        """
+        Initialize the consultation engine.
+
+        Args:
+            knowledge_client: Client for Knowledge Engine API
+            discovery_client: Client for Discovery Engine API
+            clerk_client: Client for Clerk user metadata (lightweight preferences, optional)
+            redis_client: Client for Redis user data (conversation history, optional)
+        """
         self.knowledge_client = knowledge_client
         self.discovery_client = discovery_client
+        self.clerk_client = clerk_client
+        self.redis_client = redis_client
 
     async def initialize(self):
         """Initialize the consultation engine."""
@@ -35,7 +45,8 @@ class ConsultationEngine:
         self,
         conversation_history: List[Dict[str, str]],
         user_context: Optional[Dict[str, Any]] = None,
-        specific_questions: Optional[List[str]] = None
+        specific_questions: Optional[List[str]] = None,
+        user_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Provide shopping consultation based on conversation.
@@ -88,6 +99,46 @@ class ConsultationEngine:
             "confidence": consultation_response.get("confidence", 0.8),
             "reasoning": consultation_response.get("reasoning", "")
         }
+
+    async def save_conversation_message(
+        self,
+        user_id: str,
+        role: str,
+        content: str
+    ) -> bool:
+        """
+        Save a conversation message to Redis.
+
+        Args:
+            user_id: User identifier
+            role: Message role (user, assistant, system)
+            content: Message content
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if self.redis_client:
+            return await self.redis_client.add_conversation_message(
+                user_id=user_id,
+                role=role,
+                content=content
+            )
+        return False
+
+    async def get_conversation_history(self, user_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get user's conversation history from Redis.
+
+        Args:
+            user_id: User identifier
+            limit: Maximum number of messages to return
+
+        Returns:
+            List of conversation messages
+        """
+        if self.redis_client:
+            return await self.redis_client.get_conversation_history(user_id, limit=limit)
+        return []
 
     async def cleanup(self):
         """Clean up resources."""

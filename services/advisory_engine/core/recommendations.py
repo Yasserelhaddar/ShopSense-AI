@@ -25,16 +25,20 @@ class RecommendationEngine:
     intelligent, context-aware product recommendations and advice.
     """
 
-    def __init__(self, knowledge_client, discovery_client):
+    def __init__(self, knowledge_client, discovery_client, clerk_client=None, redis_client=None):
         """
         Initialize the recommendation engine.
 
         Args:
             knowledge_client: Client for Knowledge Engine API
             discovery_client: Client for Discovery Engine API
+            clerk_client: Client for Clerk user metadata (lightweight preferences, optional)
+            redis_client: Client for Redis user data (historical data, optional)
         """
         self.knowledge_client = knowledge_client
         self.discovery_client = discovery_client
+        self.clerk_client = clerk_client
+        self.redis_client = redis_client
 
     async def initialize(self):
         """Initialize the recommendation engine."""
@@ -149,21 +153,113 @@ class RecommendationEngine:
             "updated_at": datetime.utcnow().isoformat()
         }
 
-    async def process_feedback(self, feedback_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process user feedback for learning."""
-        # TODO: Implement feedback processing
+    async def process_feedback(
+        self,
+        user_id: str,
+        product_id: str,
+        rating: float,
+        feedback: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Process user feedback for learning.
+
+        Args:
+            user_id: User identifier
+            product_id: Product identifier
+            rating: User rating (0-5)
+            feedback: Optional feedback text
+
+        Returns:
+            Dictionary with feedback confirmation
+        """
         feedback_id = f"feedback_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
-        logger.info(f"Processed feedback: {feedback_id}")
+
+        # Save to Redis if client available
+        if self.redis_client:
+            success = await self.redis_client.save_feedback(
+                user_id=user_id,
+                product_id=product_id,
+                rating=rating,
+                feedback=feedback
+            )
+            if success:
+                logger.info(f"Saved feedback to Redis for user {user_id}")
+            else:
+                logger.warning(f"Failed to save feedback to Redis for user {user_id}")
+        else:
+            logger.info(f"Processed feedback {feedback_id} (Redis not available)")
+
         return {"id": feedback_id}
 
     async def get_user_preferences(self, user_id: str) -> Dict[str, Any]:
-        """Get user preferences and history."""
-        # TODO: Implement user preference retrieval
+        """
+        Get user preferences from Clerk and history from Redis.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Dictionary with preferences, history, and recent recommendations
+        """
+        # Get lightweight shopping preferences from Clerk
+        preferences = {}
+        if self.clerk_client:
+            preferences = await self.clerk_client.get_user_preferences(user_id)
+
+        # Get historical data from Redis
+        history = []
+        recent_recommendations = []
+        if self.redis_client:
+            history = await self.redis_client.get_conversation_history(user_id, limit=10)
+            recent_recommendations = await self.redis_client.get_recent_recommendations(user_id, limit=5)
+
         return {
-            "preferences": {},
-            "history": [],
-            "recent_recommendations": []
+            "preferences": preferences,
+            "history": history,
+            "recent_recommendations": recent_recommendations
         }
+
+    async def save_user_preferences(
+        self,
+        user_id: str,
+        preferences: Dict[str, Any]
+    ) -> bool:
+        """
+        Save user preferences to Clerk.
+
+        Args:
+            user_id: User identifier
+            preferences: User preferences to save
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if self.clerk_client:
+            return await self.clerk_client.update_user_preferences(user_id, preferences)
+        else:
+            logger.warning("Cannot save preferences - Clerk client not available")
+            return False
+
+    async def update_recent_recommendations(
+        self,
+        user_id: str,
+        recommendations: List[Dict[str, Any]]
+    ) -> bool:
+        """
+        Update user's recent recommendations in Redis.
+
+        Args:
+            user_id: User identifier
+            recommendations: List of recent recommendations
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if self.redis_client:
+            return await self.redis_client.save_recommendations(
+                user_id, recommendations
+            )
+        return False
 
     async def cleanup(self):
         """Clean up resources."""
