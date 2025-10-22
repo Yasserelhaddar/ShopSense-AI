@@ -9,7 +9,7 @@ Usage:
 
     class ServiceSettings(BaseSettings):
         service_port: int = 8001
-        database_url: str = "postgresql://localhost/db"
+        redis_url: str = "redis://localhost:6379"
 
         class Config:
             env_prefix = "SERVICE_"

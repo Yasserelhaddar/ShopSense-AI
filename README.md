@@ -46,7 +46,6 @@ graph TB
     subgraph "Data Layer"
         Qdrant[(Qdrant<br/>Vector Database<br/>384-dim embeddings)]
         Redis[(Redis<br/>Cache Layer<br/>Response caching)]
-        Postgres[(PostgreSQL<br/>Relational DB<br/>Metadata)]
     end
 
     subgraph "External Services"
@@ -80,7 +79,6 @@ graph TB
     Knowledge -->|Download Models| HuggingFace
     Knowledge -->|Track Experiments| WandB
     Knowledge -->|Store Models| S3
-    Knowledge -->|Metadata| Postgres
 
     %% Response Flow
     Discovery -.->|Product Results| Advisory
@@ -96,7 +94,7 @@ graph TB
     classDef userStyle fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
 
     class Advisory,Discovery,Knowledge serviceStyle
-    class Qdrant,Redis,Postgres dbStyle
+    class Qdrant,Redis dbStyle
     class OpenAI,Apify,HuggingFace,WandB,S3,BestBuy,RapidAPI externalStyle
     class User,Gateway userStyle
 ```
@@ -161,7 +159,7 @@ curl http://localhost:8003/health  # Advisory Engine
 **Option B: Development Mode**
 ```bash
 # Start only databases
-docker-compose up -d qdrant postgres redis
+docker-compose up -d qdrant redis
 
 # Run services individually (in separate terminals)
 cd services/knowledge_engine && uv run python -m api.main
@@ -320,7 +318,6 @@ curl http://localhost:8002/health
 curl http://localhost:8003/health
 
 # Database health
-docker-compose exec postgres pg_isready
 docker-compose exec redis redis-cli ping
 docker-compose exec qdrant curl http://localhost:6333/health
 ```
@@ -412,7 +409,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **Services won't start**:
 - Check API keys are set correctly
 - Verify Docker is running
-- Check port availability (8001-8003, 5432, 6333, 6379)
+- Check port availability (8001-8003, 6333, 6379)
 
 **API calls failing**:
 - Verify service health endpoints
