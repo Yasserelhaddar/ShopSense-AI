@@ -177,13 +177,6 @@ The Knowledge Engine workflow:
 6. Serves inference API for shopping recommendations and advice
 7. Manages model lifecycle and deployment
 
-## Documentation
-
-For complete documentation, see:
-- [Service Documentation](../../docs/knowledge_engine.md)
-- [API Reference](../../docs/api/knowledge_api.md)
-- [Configuration Guide](./config/.env.example)
-
 ## Production Deployment
 
 ### Required Environment Variables

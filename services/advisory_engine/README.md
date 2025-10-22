@@ -199,13 +199,6 @@ The Advisory Engine acts as an API gateway that:
 4. Combines and ranks results based on user preferences
 5. Caches responses in Redis for performance
 
-## Documentation
-
-For complete documentation, see:
-- [Service Documentation](../../docs/advisory_engine.md)
-- [API Reference](../../docs/api/advisory_api.md)
-- [Configuration Guide](./config/.env.example)
-
 ## Production Deployment
 
 ### Required Environment Variables

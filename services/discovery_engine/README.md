@@ -202,12 +202,6 @@ curl -X POST "http://localhost:8002/api/v1/products/collect" \
   -d '{"query": "laptop", "max_products": 100}'
 ```
 
-## Documentation
-
-For complete documentation, see:
-- [Service Documentation](../../docs/discovery_engine.md)
-- [API Reference](../../docs/api/discovery_api.md)
-- [Configuration Guide](./config/.env.example)
 
 ## Production Deployment
 
