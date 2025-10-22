@@ -2,51 +2,106 @@
 
 **Intelligent Shopping Assistant Platform**
 
-ShopSense-AI is a microservices-based shopping intelligence platform that provides AI-powered product recommendations, price monitoring, and personalized shopping consultation.
+ShopSense-AI is a microservices-based shopping intelligence platform that provides AI-powered product recommendations, semantic search, and personalized shopping consultation.
 
-## 🏗️ Architecture
+## Overview
 
-### Microservices Design
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        ShopSense-AI Platform                    │
-├─────────────────────────────────────────────────────────────────┤
-│  🎯 Advisory Engine (Port 8003) - User-Facing Intelligence      │
-│  ├─ AI-powered product search and recommendations              │
-│  ├─ Shopping consultation and advice                           │
-│  └─ Product comparison and analysis                            │
-├─────────────────────────────────────────────────────────────────┤
-│  🔍 Discovery Engine (Port 8002) - Data Collection & Search     │
-│  ├─ Apify-powered product collection from Amazon               │
-│  ├─ Qdrant vector-based semantic search (384-dim embeddings)   │
-│  ├─ Intelligent relevance filtering (similarity threshold)     │
-│  ├─ Price, category, store, and brand filtering                │
-│  └─ Background job processing with status tracking             │
-├─────────────────────────────────────────────────────────────────┤
-│  🧠 Knowledge Engine (Port 8001) - AI Training & Inference      │
-│  ├─ LLM fine-tuning for shopping domains                       │
-│  ├─ Model management and versioning                            │
-│  └─ AI inference and consultation                              │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                        Database Layer                           │
-├─────────────────────────────────────────────────────────────────┤
-│  📊 Qdrant (Vector DB) │ 🐘 PostgreSQL │ 🗄️ Redis (Cache)        │
-└─────────────────────────────────────────────────────────────────┘
-```
+A production-ready platform combining LLM training, vector search, and intelligent product discovery to deliver comprehensive shopping assistance.
 
 ### Key Features
 
-- **🤖 AI-Powered Recommendations**: Fine-tuned LLMs for shopping assistance
-- **🔍 Semantic Product Search**: Vector-based similarity search across products
-- **💰 Price Monitoring**: Real-time deal detection and price tracking
-- **🛒 Shopping Consultation**: Conversational AI for personalized advice
-- **📊 Product Comparison**: Intelligent analysis and recommendation
-- **🏪 Multi-Store Integration**: Amazon, Best Buy, Walmart, and more
+- **AI-Powered Recommendations**: Fine-tuned LLMs using QLoRA for shopping assistance
+- **Semantic Product Search**: Vector embeddings with Qdrant for similarity-based discovery
+- **Price Monitoring**: Real-time deal detection and price tracking
+- **Shopping Consultation**: Conversational AI for personalized advice
+- **Product Comparison**: Multi-criteria analysis and ranking
+- **Multi-Store Integration**: Amazon, Best Buy, Walmart, eBay support
 
-## 🚀 Quick Start
+### Architecture
+
+Three independent microservices communicating via REST APIs:
+
+- **[Knowledge Engine](services/knowledge_engine/README.md)** (Port 8001) - LLM training, model management, and AI inference
+- **[Discovery Engine](services/discovery_engine/README.md)** (Port 8002) - Product data collection and semantic search
+- **[Advisory Engine](services/advisory_engine/README.md)** (Port 8003) - User-facing recommendations and consultation
+
+#### System Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph "Client Layer"
+        User[User/Frontend]
+    end
+
+    subgraph "API Gateway Layer"
+        Gateway[Load Balancer/Gateway]
+    end
+
+    subgraph "Microservices Layer"
+        Advisory[Advisory Engine<br/>Port 8003<br/>---<br/>Orchestration & Recommendations]
+        Discovery[Discovery Engine<br/>Port 8002<br/>---<br/>Data Collection & Search]
+        Knowledge[Knowledge Engine<br/>Port 8001<br/>---<br/>AI Training & Inference]
+    end
+
+    subgraph "Data Layer"
+        Qdrant[(Qdrant<br/>Vector Database<br/>384-dim embeddings)]
+        Redis[(Redis<br/>Cache Layer<br/>Response caching)]
+        Postgres[(PostgreSQL<br/>Relational DB<br/>Metadata)]
+    end
+
+    subgraph "External Services"
+        OpenAI[OpenAI API<br/>GPT Models]
+        Apify[Apify<br/>Amazon Scraping]
+        HuggingFace[HuggingFace<br/>Model Hub]
+        WandB[WandB<br/>Experiment Tracking]
+        S3[AWS S3<br/>Model Storage]
+        BestBuy[Best Buy API]
+        RapidAPI[RapidAPI<br/>Walmart/eBay]
+    end
+
+    %% User Flow
+    User -->|HTTP Requests| Gateway
+    Gateway -->|Route| Advisory
+
+    %% Advisory Engine Connections
+    Advisory -->|Product Search| Discovery
+    Advisory -->|AI Inference| Knowledge
+    Advisory -->|Cache Get/Set| Redis
+
+    %% Discovery Engine Connections
+    Discovery -->|Vector Search| Qdrant
+    Discovery -->|Scrape Products| Apify
+    Discovery -->|Product Data| BestBuy
+    Discovery -->|Multi-Store Data| RapidAPI
+    Discovery -->|Cache Results| Redis
+
+    %% Knowledge Engine Connections
+    Knowledge -->|Inference/Training Data| OpenAI
+    Knowledge -->|Download Models| HuggingFace
+    Knowledge -->|Track Experiments| WandB
+    Knowledge -->|Store Models| S3
+    Knowledge -->|Metadata| Postgres
+
+    %% Response Flow
+    Discovery -.->|Product Results| Advisory
+    Knowledge -.->|AI Advice| Advisory
+    Redis -.->|Cached Data| Advisory
+    Advisory -.->|Combined Response| Gateway
+    Gateway -.->|JSON Response| User
+
+    %% Styling
+    classDef serviceStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef dbStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef externalStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef userStyle fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+
+    class Advisory,Discovery,Knowledge serviceStyle
+    class Qdrant,Redis,Postgres dbStyle
+    class OpenAI,Apify,HuggingFace,WandB,S3,BestBuy,RapidAPI externalStyle
+    class User,Gateway userStyle
+```
+
+## Quick Start
 
 ### Prerequisites
 
@@ -126,134 +181,64 @@ curl -X POST "http://localhost:8003/api/v1/search" \
   }'
 ```
 
-## 📚 API Documentation
+## Service Documentation
 
-### Service Endpoints
+Each service provides comprehensive documentation and interactive API exploration:
 
-| Service | Port | Documentation | Purpose |
-|---------|------|---------------|---------|
-| Knowledge Engine | 8001 | http://localhost:8001/docs | AI training & inference |
-| Discovery Engine | 8002 | http://localhost:8002/docs | Product search & collection |
-| Advisory Engine | 8003 | http://localhost:8003/docs | User-facing recommendations |
+| Service | Port | Interactive Docs | Service README |
+|---------|------|------------------|----------------|
+| **Knowledge Engine** | 8001 | http://localhost:8001/docs | [README](services/knowledge_engine/README.md) |
+| **Discovery Engine** | 8002 | http://localhost:8002/docs | [README](services/discovery_engine/README.md) |
+| **Advisory Engine** | 8003 | http://localhost:8003/docs | [README](services/advisory_engine/README.md) |
 
-### Discovery Engine API Examples
+### Quick API Examples
 
-#### 1. Trigger Product Collection
+**Trigger Product Collection:**
 ```bash
-# Collect up to 20 PS5 controllers from Amazon
 curl -X POST "http://localhost:8002/api/v1/products/collect" \
   -H "Content-Type: application/json" \
-  -d '{
-    "sources": ["amazon"],
-    "categories": ["PS5 Controller"],
-    "max_results": 20
-  }'
-
-# Response: {"job_id": "...", "status": "started", "estimated_duration": "15-30 minutes"}
+  -d '{"sources": ["amazon"], "categories": ["PS5 Controller"], "max_results": 20}'
 ```
 
-#### 2. Check Collection Status
+**Semantic Product Search:**
 ```bash
-curl "http://localhost:8002/api/v1/collection/status/{job_id}"
-
-# Response includes: status, progress, products_collected, errors
-```
-
-#### 3. Semantic Product Search
-```bash
-# Search with intelligent semantic understanding
 curl "http://localhost:8002/api/v1/products/search?query=gaming+controller&limit=10"
-
-# Advanced search with filters
-curl "http://localhost:8002/api/v1/products/search?query=controller&min_price=40&max_price=50&category=Accessories&sort_by=price_asc"
-
-# Key Features:
-# ✓ Semantic understanding (e.g., "sports equipment for kids" ranks children's products higher)
-# ✓ Similarity threshold filtering (excludes results with <0.2 relevance)
-# ✓ Real-time search metrics (actual timing, not hardcoded)
-# ✓ Multi-criteria filtering (price, category, store, brand)
 ```
 
-#### 4. Get Product Details
+**Get Product Details:**
 ```bash
-# Fetch product by original Amazon ASIN
 curl "http://localhost:8002/api/v1/products/amazon_B0DTP6BRVL"
-
-# Returns: Full product details with ratings, features, specs
 ```
 
-#### 5. Browse Categories & Stores
-```bash
-# Get all available categories with product counts
-curl "http://localhost:8002/api/v1/products/categories"
+For complete API documentation, examples, and integration guides, see the individual service READMEs linked above.
 
-# Get all available stores
-curl "http://localhost:8002/api/v1/products/stores"
-```
-
-#### 6. Find Deals (Coming Soon)
-```bash
-# Get current deals with minimum discount
-curl "http://localhost:8002/api/v1/deals?min_discount=10&category=Electronics"
-
-# Note: Requires products with original_price data
-```
-
-### Advisory Engine API Examples (Future Integration)
-
-#### AI-Powered Product Search
-```bash
-curl -X POST "http://localhost:8003/api/v1/search" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "laptop for video editing",
-    "user_preferences": {
-      "priority": ["performance", "display_quality"],
-      "budget_range": {"min": 1500, "max": 3000}
-    }
-  }'
-```
-
-#### Shopping Consultation
-```bash
-curl -X POST "http://localhost:8003/api/v1/advice" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "conversation_history": [
-      {"role": "user", "content": "I need a laptop for college"},
-      {"role": "assistant", "content": "What will you primarily use it for?"},
-      {"role": "user", "content": "Programming and some light gaming"}
-    ]
-  }'
-```
-
-## 🛠️ Development
+## Development
 
 ### Project Structure
 
 ```
 shopsense-ai/
 ├── services/                    # Microservices
-│   ├── knowledge_engine/        # 🧠 AI Training & Inference
+│   ├── knowledge_engine/        # AI Training & Inference
 │   │   ├── api/                # FastAPI routes & schemas
 │   │   ├── core/               # Training, evaluation, data
 │   │   ├── config/             # Settings & configuration
 │   │   └── Dockerfile
-│   ├── discovery_engine/        # 🔍 Data Collection & Search
+│   ├── discovery_engine/        # Data Collection & Search
 │   │   ├── api/                # FastAPI routes & schemas
 │   │   ├── core/               # Collectors, processors, storage
 │   │   ├── config/             # Settings & configuration
 │   │   └── Dockerfile
-│   └── advisory_engine/         # 🎯 User-Facing Intelligence
+│   └── advisory_engine/         # User-Facing Intelligence
 │       ├── api/                # FastAPI routes & schemas
 │       ├── clients/            # Service clients
 │       ├── core/               # Recommendations & consultation
 │       ├── config/             # Settings & configuration
 │       └── Dockerfile
-├── core/                       # 🔧 Shared utilities
+├── core/                       # Shared utilities
 │   ├── logging.py             # Centralized logging
 │   └── config.py              # Base configuration
-└── docker-compose.yml         # 🏗️ Container orchestration
+└── docker-compose.yml         # Container orchestration
 ```
 
 ### Local Development
@@ -292,45 +277,39 @@ cd ../../
 uv run pytest tests/
 ```
 
-## 🔧 Configuration
+## Configuration
 
-### Service Configuration
+### Environment Variables
 
 Each service uses environment variables with service-specific prefixes:
 
-- **Knowledge Engine**: `KNOWLEDGE_*`
-- **Discovery Engine**: `DISCOVERY_*`
-- **Advisory Engine**: `ADVISORY_*`
+- **Knowledge Engine**: `KNOWLEDGE_*` - See [Knowledge Engine configuration](services/knowledge_engine/README.md#configuration)
+- **Discovery Engine**: `DISCOVERY_*` - See [Discovery Engine configuration](services/discovery_engine/README.md#configuration)
+- **Advisory Engine**: `ADVISORY_*` - See [Advisory Engine configuration](services/advisory_engine/README.md#configuration)
 
-### Database Configuration
-
-```yaml
-# Qdrant Vector Database
-DISCOVERY_QDRANT_URL: http://qdrant:6333
-DISCOVERY_QDRANT_COLLECTION: products
-
-# PostgreSQL
-DISCOVERY_POSTGRES_URL: postgresql://admin:password123@postgres:5432/shopsense
-
-# Redis Cache
-ADVISORY_REDIS_URL: redis://redis:6379
-```
-
-### External API Configuration
+### Required API Keys
 
 ```bash
-# Required
-KNOWLEDGE_OPENAI_API_KEY=sk-xxx      # For AI training/inference
-DISCOVERY_APPIFY_API_KEY=xxx         # For Amazon product data
-ADVISORY_OPENAI_API_KEY=sk-xxx       # For consultations
+# Core Services
+KNOWLEDGE_OPENAI_API_KEY=sk-xxx      # OpenAI for AI inference
+KNOWLEDGE_HUGGINGFACE_TOKEN=hf_xxx   # HuggingFace for models
+KNOWLEDGE_WANDB_API_KEY=xxx          # WandB for experiment tracking
+KNOWLEDGE_WANDB_ENTITY=your-team     # WandB team name (required)
 
-# Optional
-DISCOVERY_BESTBUY_API_KEY=xxx        # Best Buy products
-DISCOVERY_RAPIDAPI_KEY=xxx           # Walmart, eBay via RapidAPI
-KNOWLEDGE_WANDB_API_KEY=xxx          # Experiment tracking
+DISCOVERY_APIFY_API_KEY=xxx          # Apify for product scraping
+ADVISORY_OPENAI_API_KEY=sk-xxx       # OpenAI for consultations
+
+# Optional APIs
+DISCOVERY_BESTBUY_API_KEY=xxx        # Best Buy API
+DISCOVERY_RAPIDAPI_KEY=xxx           # RapidAPI for Walmart/eBay
+KNOWLEDGE_S3_BUCKET=xxx              # S3 for model storage (optional)
 ```
 
-## 📊 Monitoring & Operations
+For detailed configuration options, see:
+- [docker-compose.yml](docker-compose.yml) - Container orchestration settings
+- Individual service `.env.example` files for all available options
+
+## Monitoring & Operations
 
 ### Health Checks
 
@@ -372,7 +351,7 @@ docker-compose exec advisory-service /bin/bash
 docker stats
 ```
 
-## 🚢 Deployment
+## Deployment
 
 ### Production Deployment
 
@@ -403,7 +382,7 @@ docker-compose up -d --scale discovery-service=2
 # Use load balancer for distribution
 ```
 
-## 🤝 Contributing
+## Contributing
 
 ### Development Workflow
 
@@ -422,11 +401,11 @@ docker-compose up -d --scale discovery-service=2
 - **Testing**: Unit tests for core functionality
 - **Logging**: Use structured logging throughout
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Support
+## Support
 
 ### Common Issues
 
@@ -452,7 +431,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Logs**: Include relevant service logs
 - **Configuration**: Verify environment variables
 
-## 🎯 Roadmap
+## Roadmap
 
 - [ ] **Enhanced AI Models**: Custom shopping domain models
 - [ ] **More Data Sources**: Additional e-commerce platforms
@@ -464,4 +443,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Built with ❤️ using FastAPI, Qdrant, OpenAI, and modern Python**
+**Author**: [Yasser El Haddar](mailto:yasserelhaddar@gmail.com)
+
+**Built with FastAPI, Qdrant, OpenAI, and modern Python**
