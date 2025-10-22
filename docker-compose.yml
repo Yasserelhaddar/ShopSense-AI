@@ -17,15 +17,18 @@ services:
       - KNOWLEDGE_LOG_LEVEL=INFO
       - KNOWLEDGE_ENVIRONMENT=development
 
+      # CORS Configuration
+      - KNOWLEDGE_ALLOWED_ORIGINS=*
+
       # Model Storage
       - KNOWLEDGE_MODEL_STORAGE_PATH=/models
 
       # External APIs (Set these in your .env file)
       - KNOWLEDGE_OPENAI_API_KEY=${KNOWLEDGE_OPENAI_API_KEY}
-      - KNOWLEDGE_HF_TOKEN=${KNOWLEDGE_HF_TOKEN}
+      - KNOWLEDGE_HUGGINGFACE_TOKEN=${KNOWLEDGE_HUGGINGFACE_TOKEN}
       - KNOWLEDGE_WANDB_API_KEY=${KNOWLEDGE_WANDB_API_KEY}
       - KNOWLEDGE_WANDB_PROJECT=shopsense-training
-      - KNOWLEDGE_WANDB_ENTITY=shopsense-team
+      - KNOWLEDGE_WANDB_ENTITY=${KNOWLEDGE_WANDB_ENTITY}
 
       # Training Configuration
       - KNOWLEDGE_BASE_MODEL=mistralai/Mistral-7B-Instruct-v0.2
@@ -37,12 +40,10 @@ services:
       # AWS S3 Configuration (Optional for production)
       - KNOWLEDGE_AWS_ACCESS_KEY_ID=${KNOWLEDGE_AWS_ACCESS_KEY_ID:-}
       - KNOWLEDGE_AWS_SECRET_ACCESS_KEY=${KNOWLEDGE_AWS_SECRET_ACCESS_KEY:-}
-      - KNOWLEDGE_S3_BUCKET=shopsense-models
-      - KNOWLEDGE_S3_REGION=us-east-1
+      - KNOWLEDGE_S3_BUCKET=${KNOWLEDGE_S3_BUCKET:-}
+      - KNOWLEDGE_AWS_REGION=${KNOWLEDGE_AWS_REGION:-us-east-1}
     volumes:
       - knowledge_models:/models
-    depends_on:
-      - postgres
     restart: unless-stopped
     networks:
       - shopsense-network
@@ -59,6 +60,9 @@ services:
       - DISCOVERY_LOG_LEVEL=INFO
       - DISCOVERY_ENVIRONMENT=development
 
+      # CORS Configuration
+      - DISCOVERY_ALLOWED_ORIGINS=*
+
       # Vector Database
       - DISCOVERY_QDRANT_URL=http://qdrant:6333
       - DISCOVERY_QDRANT_COLLECTION=products
@@ -69,9 +73,9 @@ services:
       - DISCOVERY_EMBEDDING_VECTOR_SIZE=384
 
       # External APIs (Set these in your .env file)
-      - DISCOVERY_APPIFY_API_KEY=${DISCOVERY_APPIFY_API_KEY}
-      - DISCOVERY_APPIFY_BASE_URL=https://api.appify.com/v1
-      - DISCOVERY_APPIFY_RATE_LIMIT=10
+      - DISCOVERY_APIFY_API_KEY=${DISCOVERY_APIFY_API_KEY}
+      - DISCOVERY_APIFY_BASE_URL=https://api.apify.com/v2
+      - DISCOVERY_APIFY_ACTOR_ID=BG3WDrGdteHgZgbPK
 
       - DISCOVERY_BESTBUY_API_KEY=${DISCOVERY_BESTBUY_API_KEY:-}
       - DISCOVERY_BESTBUY_BASE_URL=https://api.bestbuy.com/v1
@@ -80,8 +84,7 @@ services:
       - DISCOVERY_RAPIDAPI_WALMART_URL=https://walmart-api.rapidapi.com
       - DISCOVERY_RAPIDAPI_EBAY_URL=https://ebay-search-result.rapidapi.com
 
-      # Database Configuration
-      - DISCOVERY_POSTGRES_URL=postgresql://admin:password123@postgres:5432/shopsense
+      # Cache Configuration
       - DISCOVERY_REDIS_URL=redis://redis:6379
 
       # Collection Configuration
@@ -90,7 +93,6 @@ services:
       - DISCOVERY_MAX_COLLECTION_RETRIES=3
     depends_on:
       - qdrant
-      - postgres
       - redis
     restart: unless-stopped
     networks:
@@ -108,17 +110,28 @@ services:
       - ADVISORY_LOG_LEVEL=INFO
       - ADVISORY_ENVIRONMENT=development
 
+      # CORS Configuration
+      - ADVISORY_ALLOWED_ORIGINS=*
+
       # Service Dependencies
       - ADVISORY_KNOWLEDGE_SERVICE_URL=http://knowledge-service:8001
       - ADVISORY_DISCOVERY_SERVICE_URL=http://discovery-service:8002
 
+      # Model Configuration
+      - ADVISORY_DEFAULT_MODEL_ID=shopping_advisor_production_v2
+
       # External APIs
       - ADVISORY_OPENAI_API_KEY=${ADVISORY_OPENAI_API_KEY}
-      - ADVISORY_OPENAI_MODEL=gpt-3.5-turbo
+
+      # HTTP Client Configuration
+      - ADVISORY_HTTP_TIMEOUT_SECONDS=60
+      - ADVISORY_HTTP_MAX_KEEPALIVE=5
+      - ADVISORY_HTTP_MAX_CONNECTIONS=10
 
       # Cache Configuration
       - ADVISORY_REDIS_URL=redis://redis:6379
       - ADVISORY_CACHE_TTL_SECONDS=300
+      - ADVISORY_CACHE_ENABLED=true
 
       # Recommendation Configuration
       - ADVISORY_MAX_RECOMMENDATIONS=10
