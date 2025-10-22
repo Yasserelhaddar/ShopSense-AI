@@ -16,6 +16,8 @@ A production-ready platform combining LLM training, vector search, and intellige
 - **Shopping Consultation**: Conversational AI for personalized advice
 - **Product Comparison**: Multi-criteria analysis and ranking
 - **Multi-Store Integration**: Amazon, Best Buy, Walmart, eBay support
+- **User Authentication**: Secure authentication with Clerk (OAuth, email/password)
+- **Activity Tracking**: Auto-tracking with privacy controls (opt-out model, clear history)
 
 ### Architecture
 
@@ -45,7 +47,7 @@ graph TB
 
     subgraph "Data Layer"
         Qdrant[(Qdrant<br/>Vector Database<br/>384-dim embeddings)]
-        Redis[(Redis<br/>Cache Layer<br/>Response caching)]
+        Redis[(Redis<br/>User Data & Cache<br/>Activity history + responses)]
     end
 
     subgraph "External Services"
@@ -307,6 +309,41 @@ For detailed configuration options, see:
 - [docker-compose.yml](docker-compose.yml) - Container orchestration settings
 - Individual service `.env.example` files for all available options
 
+## Authentication
+
+ShopSense-AI uses **[Clerk](https://clerk.com)** for user authentication and management. Clerk provides:
+
+- Email/password authentication
+- OAuth providers (Google, GitHub, etc.)
+- Pre-built UI components
+- User profile management
+- Secure JWT-based sessions
+
+### Quick Setup
+
+1. **Create Clerk Account**: Sign up at [clerk.com](https://clerk.com)
+2. **Get API Keys**: Find in Clerk dashboard under API Keys
+3. **Configure Environment**:
+
+```bash
+# Advisory Engine (.env or docker-compose)
+ADVISORY_CLERK_PUBLISHABLE_KEY=pk_test_your-key
+ADVISORY_CLERK_SECRET_KEY=sk_test_your-key
+ADVISORY_CLERK_ISSUER=https://your-domain.clerk.accounts.dev
+ADVISORY_AUTH_ENABLED=true  # false for development without auth
+```
+
+### Development Without Auth
+
+Set `ADVISORY_AUTH_ENABLED=false` to disable authentication during development:
+
+```bash
+# .env file
+ADVISORY_AUTH_ENABLED=false
+```
+
+All endpoints will be accessible without authentication tokens.
+
 ## Monitoring & Operations
 
 ### Health Checks
@@ -432,7 +469,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [ ] **Enhanced AI Models**: Custom shopping domain models
 - [ ] **More Data Sources**: Additional e-commerce platforms
-- [ ] **User Profiles**: Persistent user preferences and history
+- [x] **User Profiles**: Persistent user preferences and history (Clerk + Redis)
 - [ ] **Mobile API**: Mobile-optimized endpoints
 - [ ] **Analytics Dashboard**: Usage and performance metrics
 - [ ] **A/B Testing**: Recommendation algorithm testing
