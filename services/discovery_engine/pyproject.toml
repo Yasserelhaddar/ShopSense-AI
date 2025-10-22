@@ -3,8 +3,9 @@ name = "shopsense-discovery"
 version = "1.0.0"
 description = "Discovery Engine - Product data collection and search for ShopSense-AI"
 authors = [
-    {name = "ShopSense-AI Team", email = "team@shopsense-ai.com"}
+    {name = "Yasser El Haddar", email = "yasserelhaddar@gmail.com"}
 ]
+readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
     "fastapi>=0.104.0",
@@ -23,6 +24,13 @@ dependencies = [
     "shared",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -31,7 +39,7 @@ build-backend = "hatchling.build"
 shared = { path = "../../shared", editable = true }
 
 [tool.hatch.build.targets.wheel]
-packages = ["."]
+packages = ["api", "core", "clients", "config"]
 
 [tool.ruff]
 line-length = 88

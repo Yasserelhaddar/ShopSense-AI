@@ -3,7 +3,7 @@ name = "shopsense-knowledge"
 version = "1.0.0"
 description = "Knowledge Engine - LLM training and model management for ShopSense-AI"
 authors = [
-    {name = "ShopSense-AI Team", email = "team@shopsense-ai.com"}
+    {name = "Yasser El Haddar", email = "yasserelhaddar@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.9"
