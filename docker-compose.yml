@@ -113,6 +113,12 @@ services:
       # CORS Configuration
       - ADVISORY_ALLOWED_ORIGINS=*
 
+      # Authentication Configuration (Clerk)
+      - ADVISORY_CLERK_PUBLISHABLE_KEY=${ADVISORY_CLERK_PUBLISHABLE_KEY:-}
+      - ADVISORY_CLERK_SECRET_KEY=${ADVISORY_CLERK_SECRET_KEY:-}
+      - ADVISORY_CLERK_ISSUER=${ADVISORY_CLERK_ISSUER:-}
+      - ADVISORY_AUTH_ENABLED=${ADVISORY_AUTH_ENABLED:-false}
+
       # Service Dependencies
       - ADVISORY_KNOWLEDGE_SERVICE_URL=http://knowledge-service:8001
       - ADVISORY_DISCOVERY_SERVICE_URL=http://discovery-service:8002
