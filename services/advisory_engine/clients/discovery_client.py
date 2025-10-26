@@ -91,3 +91,103 @@ class DiscoveryClient:
         """Clean up resources."""
         if self.client:
             await self.client.aclose()
+
+    # Admin operations
+
+    async def trigger_collection(
+        self,
+        sources: List[str],
+        categories: Optional[List[str]] = None,
+        max_results: int = 100,
+        priority: str = "normal"
+    ) -> Dict[str, Any]:
+        """
+        Trigger product data collection from specified sources.
+
+        Args:
+            sources: List of sources to collect from (e.g., ["amazon", "bestbuy"])
+            categories: List of categories to collect (optional)
+            max_results: Maximum number of results per category
+            priority: Collection priority (normal, high, urgent)
+
+        Returns:
+            Collection job information with job_id and status
+        """
+        if not self.client:
+            await self.initialize()
+
+        payload = {
+            "sources": sources,
+            "categories": categories or [],
+            "max_results": max_results,
+            "priority": priority
+        }
+
+        try:
+            response = await self.client.post("/api/v1/products/collect", json=payload)
+            response.raise_for_status()
+            result = response.json()
+            logger.info(f"Collection job started: {result.get('job_id')}")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to trigger collection: {e}")
+            raise
+
+    async def get_collection_status(self, job_id: str) -> Dict[str, Any]:
+        """
+        Get status of a collection job.
+
+        Args:
+            job_id: Collection job identifier
+
+        Returns:
+            Job status and progress information
+        """
+        if not self.client:
+            await self.initialize()
+
+        try:
+            response = await self.client.get(f"/api/v1/collection/status/{job_id}")
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to get collection status: {e}")
+            raise
+
+    async def get_categories(self) -> List[str]:
+        """
+        Get available product categories.
+
+        Returns:
+            List of available categories
+        """
+        if not self.client:
+            await self.initialize()
+
+        try:
+            response = await self.client.get("/api/v1/products/categories")
+            response.raise_for_status()
+            result = response.json()
+            return result.get("categories", [])
+        except Exception as e:
+            logger.error(f"Failed to get categories: {e}")
+            return []
+
+    async def get_stores(self) -> List[str]:
+        """
+        Get available stores/sources.
+
+        Returns:
+            List of available stores
+        """
+        if not self.client:
+            await self.initialize()
+
+        try:
+            response = await self.client.get("/api/v1/products/stores")
+            response.raise_for_status()
+            result = response.json()
+            return result.get("stores", [])
+        except Exception as e:
+            logger.error(f"Failed to get stores: {e}")
+            return []

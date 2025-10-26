@@ -631,6 +631,361 @@ async def clear_my_history(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Admin endpoints
+from api.middleware import require_admin
+from fastapi import Depends
+
+
+@router.post("/admin/data/collect")
+async def admin_trigger_collection(
+    request: Request,
+    user: Depends = Depends(require_admin),
+    sources: List[str] = None,
+    categories: Optional[List[str]] = None,
+    max_results: int = 100
+):
+    """
+    Admin: Trigger product data collection from Discovery Engine.
+
+    Requires admin role.
+
+    Args:
+        request: FastAPI request object
+        user: Authenticated admin user (automatically injected)
+        sources: List of sources to collect from (e.g., ["amazon", "bestbuy"])
+        categories: List of categories to collect (optional)
+        max_results: Maximum results per category
+
+    Returns:
+        dict: Collection job information
+    """
+    try:
+        discovery_client = request.app.state.discovery_client
+
+        result = await discovery_client.trigger_collection(
+            sources=sources or ["amazon"],
+            categories=categories,
+            max_results=max_results
+        )
+
+        logger.info(f"Admin {user.user_id} triggered collection job: {result.get('job_id')}")
+
+        return {
+            "status": "success",
+            "job": result,
+            "admin": user.user_id
+        }
+
+    except Exception as e:
+        logger.error(f"Admin collection trigger failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/data/collection/{job_id}")
+async def admin_get_collection_status(
+    request: Request,
+    job_id: str,
+    user: Depends = Depends(require_admin)
+):
+    """
+    Admin: Get status of a data collection job.
+
+    Requires admin role.
+
+    Args:
+        request: FastAPI request object
+        job_id: Collection job identifier
+        user: Authenticated admin user (automatically injected)
+
+    Returns:
+        dict: Job status and progress
+    """
+    try:
+        discovery_client = request.app.state.discovery_client
+
+        status = await discovery_client.get_collection_status(job_id)
+
+        return {
+            "job_id": job_id,
+            "status": status
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get collection status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/training/generate-data")
+async def admin_generate_training_data(
+    request: Request,
+    user: Depends = Depends(require_admin),
+    num_examples: int = 100,
+    domains: Optional[List[str]] = None
+):
+    """
+    Admin: Generate synthetic training data using Knowledge Engine.
+
+    Requires admin role.
+
+    Args:
+        request: FastAPI request object
+        user: Authenticated admin user (automatically injected)
+        num_examples: Number of training examples to generate
+        domains: List of domains/topics for the data
+
+    Returns:
+        dict: Data generation job information
+    """
+    try:
+        knowledge_client = request.app.state.knowledge_client
+
+        result = await knowledge_client.generate_training_data(
+            num_examples=num_examples,
+            domains=domains
+        )
+
+        logger.info(f"Admin {user.user_id} triggered training data generation: {num_examples} examples")
+
+        return {
+            "status": "success",
+            "data_generation": result,
+            "admin": user.user_id
+        }
+
+    except Exception as e:
+        logger.error(f"Training data generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/admin/training/start")
+async def admin_start_training(
+    request: Request,
+    user: Depends = Depends(require_admin),
+    model_name: str = None,
+    base_model: Optional[str] = None,
+    training_params: Optional[Dict[str, Any]] = None
+):
+    """
+    Admin: Start model training job on Knowledge Engine.
+
+    Requires admin role.
+
+    Args:
+        request: FastAPI request object
+        user: Authenticated admin user (automatically injected)
+        model_name: Name for the trained model
+        base_model: Base model to fine-tune
+        training_params: Training parameters
+
+    Returns:
+        dict: Training job information
+    """
+    try:
+        knowledge_client = request.app.state.knowledge_client
+
+        if not model_name:
+            raise HTTPException(status_code=400, detail="model_name is required")
+
+        result = await knowledge_client.start_training(
+            model_name=model_name,
+            base_model=base_model,
+            training_params=training_params
+        )
+
+        logger.info(f"Admin {user.user_id} started training job: {result.get('job_id')}")
+
+        return {
+            "status": "success",
+            "training": result,
+            "admin": user.user_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Training start failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/training/status/{job_id}")
+async def admin_get_training_status(
+    request: Request,
+    job_id: str,
+    user: Depends = Depends(require_admin)
+):
+    """
+    Admin: Get status of a training job.
+
+    Requires admin role.
+
+    Args:
+        request: FastAPI request object
+        job_id: Training job identifier
+        user: Authenticated admin user (automatically injected)
+
+    Returns:
+        dict: Job status and progress
+    """
+    try:
+        knowledge_client = request.app.state.knowledge_client
+
+        status = await knowledge_client.get_training_status(job_id)
+
+        return {
+            "job_id": job_id,
+            "status": status
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get training status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/models")
+async def admin_list_models(
+    request: Request,
+    user: Depends = Depends(require_admin)
+):
+    """
+    Admin: List all available models from Knowledge Engine.
+
+    Requires admin role.
+
+    Args:
+        request: FastAPI request object
+        user: Authenticated admin user (automatically injected)
+
+    Returns:
+        dict: List of models with metadata
+    """
+    try:
+        knowledge_client = request.app.state.knowledge_client
+
+        models = await knowledge_client.list_models()
+
+        return {
+            "models": models,
+            "total": len(models)
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to list models: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/system/health")
+async def admin_system_health(
+    request: Request,
+    user: Depends = Depends(require_admin)
+):
+    """
+    Admin: Get comprehensive health status of all engines.
+
+    Requires admin role.
+
+    Args:
+        request: FastAPI request object
+        user: Authenticated admin user (automatically injected)
+
+    Returns:
+        dict: Health status of all services
+    """
+    try:
+        knowledge_client = request.app.state.knowledge_client
+        discovery_client = request.app.state.discovery_client
+
+        health_status = {
+            "advisory_engine": "healthy",
+            "knowledge_engine": "unknown",
+            "discovery_engine": "unknown"
+        }
+
+        # Check Knowledge Engine
+        try:
+            knowledge_healthy = await knowledge_client.health_check()
+            health_status["knowledge_engine"] = "healthy" if knowledge_healthy else "unhealthy"
+        except Exception as e:
+            health_status["knowledge_engine"] = f"unhealthy: {str(e)}"
+
+        # Check Discovery Engine
+        try:
+            discovery_healthy = await discovery_client.health_check()
+            health_status["discovery_engine"] = "healthy" if discovery_healthy else "unhealthy"
+        except Exception as e:
+            health_status["discovery_engine"] = f"unhealthy: {str(e)}"
+
+        # Overall status
+        all_healthy = all(
+            status == "healthy" for status in health_status.values()
+        )
+        health_status["overall"] = "healthy" if all_healthy else "degraded"
+
+        return health_status
+
+    except Exception as e:
+        logger.error(f"System health check failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/system/stats")
+async def admin_system_stats(
+    request: Request,
+    user: Depends = Depends(require_admin)
+):
+    """
+    Admin: Get system statistics and metadata.
+
+    Requires admin role.
+
+    Args:
+        request: FastAPI request object
+        user: Authenticated admin user (automatically injected)
+
+    Returns:
+        dict: System statistics
+    """
+    try:
+        discovery_client = request.app.state.discovery_client
+
+        # Get categories and stores from Discovery Engine
+        categories = await discovery_client.get_categories()
+        stores = await discovery_client.get_stores()
+
+        return {
+            "categories": categories,
+            "stores": stores,
+            "total_categories": len(categories),
+            "total_stores": len(stores)
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get system stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/me")
+async def get_current_user_info(request: Request):
+    """
+    Debug endpoint to see current user's JWT token metadata.
+
+    This helps verify if admin role is present in the JWT token.
+    """
+    user = get_current_user(request)
+    if not user:
+        return {
+            "authenticated": False,
+            "message": "No user authenticated"
+        }
+
+    return {
+        "authenticated": True,
+        "user_id": user.user_id,
+        "email": user.email,
+        "metadata": user.metadata,
+        "is_admin": user.is_admin
+    }
+
+
 @router.get("/health", response_model=HealthResponse)
 async def health_check(request: Request):
     """

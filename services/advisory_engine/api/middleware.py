@@ -26,6 +26,11 @@ class User:
         self.email = email
         self.metadata = metadata or {}
 
+    @property
+    def is_admin(self) -> bool:
+        """Check if user has admin role."""
+        return self.metadata.get("role") == "admin"
+
     def __repr__(self):
         return f"User(user_id={self.user_id}, email={self.email})"
 
@@ -137,7 +142,7 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
 
             # Extract additional user information
             email = payload.get("email")
-            metadata = payload.get("public_metadata", {})
+            metadata = payload.get("metadata", {})
 
             return User(user_id=user_id, email=email, metadata=metadata)
 
@@ -202,5 +207,34 @@ def require_auth(request: Request) -> User:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+
+def require_admin(request: Request) -> User:
+    """
+    Dependency to require admin role for an endpoint.
+
+    Raises HTTPException if user is not authenticated or not an admin.
+
+    Usage in endpoints:
+        @app.post("/admin/action")
+        async def admin_endpoint(user: User = Depends(require_admin)):
+            return {"message": f"Admin {user.user_id} authorized"}
+
+    Args:
+        request: The FastAPI request object
+
+    Returns:
+        User: The authenticated admin user
+
+    Raises:
+        HTTPException: If user is not authenticated or not an admin
+    """
+    user = require_auth(request)
+    if not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required"
         )
     return user

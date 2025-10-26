@@ -385,3 +385,140 @@ class KnowledgeClient:
             "Read user reviews for real-world insights",
             "Check warranty and support options"
         ]
+
+    # Admin operations
+
+    async def generate_training_data(
+        self,
+        num_examples: int = 100,
+        domains: Optional[List[str]] = None,
+        model_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate synthetic training data using OpenAI.
+
+        Args:
+            num_examples: Number of training examples to generate
+            domains: List of domains/topics for the data (e.g., ["electronics", "fashion"])
+            model_id: Model to use for generation (defaults to gpt-3.5-turbo)
+
+        Returns:
+            Data generation job information
+        """
+        if not self.client:
+            await self.initialize()
+
+        payload = {
+            "num_examples": num_examples,
+            "domains": domains or [],
+            "model_id": model_id or "gpt-3.5-turbo"
+        }
+
+        try:
+            response = await self.client.post(
+                "/api/v1/data/generate",
+                json=payload
+            )
+            response.raise_for_status()
+            result = response.json()
+            logger.info(f"Training data generation started: {num_examples} examples")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to generate training data: {e}")
+            raise
+
+    async def start_training(
+        self,
+        model_name: str,
+        base_model: Optional[str] = None,
+        training_params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Start model training job.
+
+        Args:
+            model_name: Name for the trained model
+            base_model: Base model to fine-tune (e.g., "meta-llama/Llama-2-7b-hf")
+            training_params: Training parameters (epochs, batch_size, learning_rate, etc.)
+
+        Returns:
+            Training job information with job_id and status
+        """
+        if not self.client:
+            await self.initialize()
+
+        payload = {
+            "model_name": model_name,
+            "base_model": base_model or "meta-llama/Llama-2-7b-hf",
+            "training_params": training_params or {}
+        }
+
+        try:
+            response = await self.client.post("/api/v1/train", json=payload)
+            response.raise_for_status()
+            result = response.json()
+            logger.info(f"Training job started: {result.get('job_id')}")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to start training: {e}")
+            raise
+
+    async def get_training_status(self, job_id: str) -> Dict[str, Any]:
+        """
+        Get status of a training job.
+
+        Args:
+            job_id: Training job identifier
+
+        Returns:
+            Job status and progress information
+        """
+        if not self.client:
+            await self.initialize()
+
+        try:
+            response = await self.client.get(f"/api/v1/training/status/{job_id}")
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to get training status: {e}")
+            raise
+
+    async def list_models(self) -> List[Dict[str, Any]]:
+        """
+        List all available models.
+
+        Returns:
+            List of model information dictionaries
+        """
+        if not self.client:
+            await self.initialize()
+
+        try:
+            response = await self.client.get("/api/v1/models")
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to list models: {e}")
+            return []
+
+    async def evaluate_model(self, model_id: str) -> Dict[str, Any]:
+        """
+        Evaluate a model's performance.
+
+        Args:
+            model_id: Model identifier
+
+        Returns:
+            Evaluation metrics and results
+        """
+        if not self.client:
+            await self.initialize()
+
+        try:
+            response = await self.client.get(f"/api/v1/models/{model_id}/evaluate")
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to evaluate model: {e}")
+            raise
