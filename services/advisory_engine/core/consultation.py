@@ -72,22 +72,27 @@ class ConsultationEngine:
         # Analyze conversation to extract intent and requirements
         intent_analysis = self._analyze_conversation_intent(conversation_dicts)
 
-        # Generate consultation response
-        consultation_response = await self.knowledge_client.generate_consultation_response(
-            conversation_history=conversation_dicts,
-            user_context=user_context
-        )
-
-        # Get relevant product recommendations
+        # Get relevant product recommendations FIRST
         recommendations = []
         if intent_analysis.get("product_search_needed"):
             search_query = intent_analysis.get("extracted_query", "")
             if search_query:
                 products = await self.discovery_client.search_products(
                     query=search_query,
-                    limit=3
+                    limit=5
                 )
                 recommendations = products
+
+        # Generate consultation response with product context
+        # Build enhanced user context with products
+        enhanced_context = user_context.copy() if user_context else {}
+        if recommendations:
+            enhanced_context["available_products"] = recommendations
+
+        consultation_response = await self.knowledge_client.generate_consultation_response(
+            conversation_history=conversation_dicts,
+            user_context=enhanced_context
+        )
 
         # Generate next steps
         next_steps = self._generate_next_steps(intent_analysis, specific_questions)
@@ -167,9 +172,31 @@ class ConsultationEngine:
                 last_user_message = msg.get("content", "")
                 break
 
-        # Simple intent detection (TODO: Implement more sophisticated NLP)
-        search_keywords = ["looking for", "need", "want", "buy", "purchase", "recommend"]
-        product_search_needed = any(keyword in last_user_message.lower() for keyword in search_keywords)
+        # Enhanced intent detection with multiple signals
+        message_lower = last_user_message.lower()
+
+        # Action keywords (explicit purchase/recommendation intent)
+        action_keywords = ["looking for", "need", "want", "buy", "purchase", "recommend", "suggest", "help me find"]
+        has_action_intent = any(keyword in message_lower for keyword in action_keywords)
+
+        # Product categories
+        product_categories = [
+            "laptop", "computer", "phone", "smartphone", "tablet", "headphone", "headset",
+            "camera", "monitor", "keyboard", "mouse", "speaker", "tv", "watch", "smartwatch",
+            "console", "gaming", "printer", "router", "charger", "cable", "case", "bag"
+        ]
+        has_product_category = any(category in message_lower for category in product_categories)
+
+        # Question patterns (implicit product queries)
+        question_patterns = ["which", "what", "best", "top", "good", "better", "recommend", "should i"]
+        has_question_pattern = any(pattern in message_lower for pattern in question_patterns)
+
+        # Determine if product search is needed
+        product_search_needed = (
+            has_action_intent or
+            (has_product_category and has_question_pattern) or
+            (has_product_category and "?" in last_user_message)
+        )
 
         return {
             "product_search_needed": product_search_needed,

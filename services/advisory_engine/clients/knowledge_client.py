@@ -155,15 +155,28 @@ class KnowledgeClient:
         if model_id is None:
             model_id = settings.default_model_id
 
-        # Build conversation context
+        # Check if products are available in context
+        has_products = user_context and "available_products" in user_context
+
+        # Build conversation context with product-aware system prompt
+        system_prompt = (
+            "You are an expert shopping consultant. Analyze the conversation "
+            "history and provide personalized advice based on the user's needs and preferences."
+        )
+
+        if has_products:
+            products = user_context.get("available_products", [])
+            system_prompt += (
+                f"\n\nYou have access to {len(products)} relevant products from our catalog. "
+                "When recommending products, reference these specific products by their titles and prices. "
+                "Provide helpful comparisons and explain why each product might suit the user's needs. "
+                "Be specific about the products' features, prices, and ratings."
+            )
+
         messages = [
             {
                 "role": "system",
-                "content": (
-                    "You are an expert shopping consultant. Analyze the conversation "
-                    "history and provide personalized advice, product recommendations, "
-                    "and next steps based on the user's needs and preferences."
-                )
+                "content": system_prompt
             }
         ]
 
@@ -229,16 +242,39 @@ class KnowledgeClient:
         if model_id is None:
             model_id = settings.default_model_id
 
+        # Build detailed product information for the prompt
+        products_info = []
+        for i, product in enumerate(products, 1):
+            product_text = (
+                f"\n\nProduct {i}:\n"
+                f"- Title: {product.get('title', 'Unknown')}\n"
+                f"- Price: ${product.get('price', 0):.2f}\n"
+                f"- Store: {product.get('store', 'Unknown')}\n"
+                f"- Rating: {product.get('rating', 'N/A')}/5"
+            )
+            if product.get('reviewCount'):
+                product_text += f" ({product.get('reviewCount')} reviews)"
+            if product.get('description'):
+                product_text += f"\n- Description: {product.get('description')[:200]}..."
+            if product.get('brand'):
+                product_text += f"\n- Brand: {product.get('brand')}"
+            products_info.append(product_text)
+
         analysis_prompt = (
             f"Analyze and compare these {len(products)} products based on "
-            f"the following criteria: {', '.join(comparison_criteria)}. "
-            f"Provide strengths, weaknesses, and recommendations for each product."
+            f"the following criteria: {', '.join(comparison_criteria)}.\n\n"
+            f"{''.join(products_info)}\n\n"
+            f"Provide a detailed comparison analyzing:\n"
+            f"1. How each product performs on the specified criteria\n"
+            f"2. Strengths and weaknesses of each product\n"
+            f"3. Which product is better for different use cases\n"
+            f"4. Value for money considerations"
         )
 
         messages = [
             {
                 "role": "system",
-                "content": "You are a product analysis expert. Provide detailed, objective comparisons."
+                "content": "You are a product analysis expert. Provide detailed, objective comparisons based on the specific products and criteria provided."
             },
             {
                 "role": "user",
