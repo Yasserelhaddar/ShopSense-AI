@@ -173,6 +173,20 @@ All endpoints are prefixed with `/api/v1` and require authentication (except `/h
 - `PUT /api/v1/user/preferences` - Update shopping preferences
 - `DELETE /api/v1/user/clear-history` - Clear all user activity history
 
+### Admin Endpoints (Requires Admin Role)
+- `POST /api/v1/admin/data/collect` - Trigger product collection from Discovery Engine
+- `GET /api/v1/admin/data/collection/{job_id}` - Get collection job status
+- `GET /api/v1/admin/data/categories` - List available product categories
+- `GET /api/v1/admin/data/stores` - List available store sources
+- `POST /api/v1/admin/training/generate-data` - Generate synthetic training data via Knowledge Engine
+- `POST /api/v1/admin/training/start` - Start model training job
+- `GET /api/v1/admin/training/status/{job_id}` - Get training job status
+- `GET /api/v1/admin/models` - List available trained models
+- `GET /api/v1/admin/system/health` - Get health status of all services
+- `GET /api/v1/admin/system/stats` - Get system statistics and metrics
+
+**Note**: Admin endpoints require the user to have `role: "admin"` in their Clerk public metadata.
+
 ### Service Health
 - `GET /api/v1/health` - Health check endpoint (public)
 

@@ -18,14 +18,17 @@ A production-ready platform combining LLM training, vector search, and intellige
 - **Multi-Store Integration**: Amazon, Best Buy, Walmart, eBay support
 - **User Authentication**: Secure authentication with Clerk (OAuth, email/password)
 - **Activity Tracking**: Auto-tracking with privacy controls (opt-out model, clear history)
+- **Admin Dashboard**: Role-based admin interface for data collection, model training, and system monitoring
+- **Modern Frontend**: React + TypeScript web application with responsive design
 
 ### Architecture
 
-Three independent microservices communicating via REST APIs:
+Three independent microservices plus a modern frontend application:
 
 - **[Knowledge Engine](services/knowledge_engine/README.md)** (Port 8001) - LLM training, model management, and AI inference with automatic OpenAI fallback
 - **[Discovery Engine](services/discovery_engine/README.md)** (Port 8002) - Product data collection and semantic search
 - **[Advisory Engine](services/advisory_engine/README.md)** (Port 8003) - User-facing recommendations and product-aware consultation
+- **[Frontend Application](frontend/README.md)** (Port 5173) - React + TypeScript web interface with admin dashboard
 
 #### System Architecture Diagram
 
@@ -190,6 +193,7 @@ Each service provides comprehensive documentation and interactive API exploratio
 | **Knowledge Engine** | 8001 | http://localhost:8001/docs | [README](services/knowledge_engine/README.md) |
 | **Discovery Engine** | 8002 | http://localhost:8002/docs | [README](services/discovery_engine/README.md) |
 | **Advisory Engine** | 8003 | http://localhost:8003/docs | [README](services/advisory_engine/README.md) |
+| **Frontend Application** | 5173 | http://localhost:5173 | [README](frontend/README.md) |
 
 ### Quick API Examples
 
@@ -235,6 +239,13 @@ shopsense-ai/
 │       ├── core/               # Recommendations & consultation
 │       ├── config/             # Settings & configuration
 │       └── Dockerfile
+├── frontend/                   # React + TypeScript Web App
+│   ├── src/                   # Source code
+│   │   ├── pages/            # Page components
+│   │   ├── components/       # Reusable components
+│   │   ├── features/         # Feature modules
+│   │   └── lib/              # Utilities & API clients
+│   └── public/               # Static assets
 ├── core/                       # Shared utilities
 │   ├── logging.py             # Centralized logging
 │   └── config.py              # Base configuration
@@ -343,6 +354,27 @@ ADVISORY_AUTH_ENABLED=false
 ```
 
 All endpoints will be accessible without authentication tokens.
+
+### Admin Role Setup
+
+To grant admin access to a user for the admin dashboard:
+
+1. Go to Clerk Dashboard → Users
+2. Select user
+3. Click "Metadata" tab
+4. Add to "Public metadata":
+   ```json
+   {
+     "role": "admin"
+   }
+   ```
+5. Save changes
+
+Admin users will see an "Admin" link in the frontend header and can access the admin dashboard for:
+- **Data Collection**: Trigger and monitor product scraping jobs
+- **Training Data Generation**: Create synthetic datasets for model training
+- **Model Training**: Start and monitor fine-tuning jobs
+- **System Monitoring**: View service health and statistics
 
 ## Monitoring & Operations
 
