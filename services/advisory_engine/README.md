@@ -28,13 +28,16 @@ graph TB
     end
 
     subgraph "Advice Flow"
-        J[Consultation Request] --> K[Parse User Query]
-        K --> L{Check Cache}
-        L -->|Hit| M[Return Cached Advice]
-        L -->|Miss| N[Call Knowledge Engine]
-        N -->|AI Inference| O[Product Recommendations]
-        O --> P[Enrich with Product Data]
-        P -->|Discovery Engine| Q[Combined Response]
+        J[Consultation Request] --> K[Analyze Intent]
+        K --> L{Products Needed?}
+        L -->|Yes| LA[Fetch Products First]
+        LA -->|Discovery Engine| LB[Product Data]
+        LB --> M[Build Product Context]
+        L -->|No| N{Check Cache}
+        M --> N
+        N -->|Hit| O[Return Cached Advice]
+        N -->|Miss| P[Call Knowledge Engine]
+        P -->|Product-Aware Prompt| Q[AI Inference]
         Q --> R[Cache Advice]
         R --> S[Return Consultation]
     end
@@ -43,8 +46,9 @@ graph TB
         T[Compare Products Request] --> U[Extract Product IDs]
         U --> V[Fetch Product Details]
         V -->|Discovery Engine| W[Product Data]
-        W --> X[Call AI Analysis]
-        X -->|Knowledge Engine| Y[Comparison Insights]
+        W --> WA[Build Detailed Prompt]
+        WA -->|Title, Price, Rating, Desc| X[Call AI Analysis]
+        X -->|Knowledge Engine| Y[Specific Comparison]
         Y --> Z[Generate Report]
         Z --> AA[Return Comparison]
     end

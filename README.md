@@ -10,11 +10,11 @@ A production-ready platform combining LLM training, vector search, and intellige
 
 ### Key Features
 
-- **AI-Powered Recommendations**: Fine-tuned LLMs using QLoRA for shopping assistance
+- **AI-Powered Recommendations**: Fine-tuned LLMs using QLoRA with automatic OpenAI fallback for shopping assistance
 - **Semantic Product Search**: Vector embeddings with Qdrant for similarity-based discovery
 - **Price Monitoring**: Real-time deal detection and price tracking
-- **Shopping Consultation**: Conversational AI for personalized advice
-- **Product Comparison**: Multi-criteria analysis and ranking
+- **Shopping Consultation**: Product-aware conversational AI for personalized advice based on catalog inventory
+- **Product Comparison**: Detailed multi-criteria analysis with specific product context and recommendations
 - **Multi-Store Integration**: Amazon, Best Buy, Walmart, eBay support
 - **User Authentication**: Secure authentication with Clerk (OAuth, email/password)
 - **Activity Tracking**: Auto-tracking with privacy controls (opt-out model, clear history)
@@ -23,9 +23,9 @@ A production-ready platform combining LLM training, vector search, and intellige
 
 Three independent microservices communicating via REST APIs:
 
-- **[Knowledge Engine](services/knowledge_engine/README.md)** (Port 8001) - LLM training, model management, and AI inference
+- **[Knowledge Engine](services/knowledge_engine/README.md)** (Port 8001) - LLM training, model management, and AI inference with automatic OpenAI fallback
 - **[Discovery Engine](services/discovery_engine/README.md)** (Port 8002) - Product data collection and semantic search
-- **[Advisory Engine](services/advisory_engine/README.md)** (Port 8003) - User-facing recommendations and consultation
+- **[Advisory Engine](services/advisory_engine/README.md)** (Port 8003) - User-facing recommendations and product-aware consultation
 
 #### System Architecture Diagram
 
@@ -77,7 +77,7 @@ graph TB
     Discovery -->|Cache Results| Redis
 
     %% Knowledge Engine Connections
-    Knowledge -->|Inference/Training Data| OpenAI
+    Knowledge -->|Inference Fallback & Training Data| OpenAI
     Knowledge -->|Download Models| HuggingFace
     Knowledge -->|Track Experiments| WandB
     Knowledge -->|Store Models| S3

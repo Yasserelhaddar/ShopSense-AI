@@ -29,10 +29,13 @@ graph TB
     end
 
     subgraph "Inference Flow"
-        L[Inference Request] --> M[Load Model]
-        M --> N[Process Query]
-        N --> O[Generate Response]
-        O --> P[Return Advice]
+        L[Inference Request] --> M{Model Exists?}
+        M -->|Yes| N[Load Custom Model]
+        M -->|No| NA[OpenAI Fallback]
+        N --> O[Process Query]
+        NA --> O
+        O --> P[Generate Response]
+        P --> Q[Return Advice]
     end
 
     subgraph "External Services"
@@ -116,7 +119,7 @@ All endpoints are prefixed with `/api/v1`:
 
 - `POST /api/v1/train` - Start model training job
 - `GET /api/v1/models` - List available models
-- `POST /api/v1/models/{id}/inference` - Run inference with specific model
+- `POST /api/v1/models/{id}/inference` - Run inference with specific model (auto-fallback to OpenAI if model not found)
 - `POST /api/v1/data/generate` - Generate synthetic training data
 - `GET /api/v1/training/status/{job_id}` - Check training job status
 - `GET /api/v1/health` - Health check endpoint
@@ -174,8 +177,10 @@ The Knowledge Engine workflow:
 3. Fine-tunes base LLMs using QLoRA (Quantized Low-Rank Adaptation)
 4. Tracks training experiments with WandB for metrics and visualization
 5. Saves trained models to S3 with version control
-6. Serves inference API for shopping recommendations and advice
+6. Serves inference API for shopping recommendations and advice with automatic OpenAI fallback
 7. Manages model lifecycle and deployment
+
+**Inference Fallback Strategy**: When a requested custom model is not available, the service automatically falls back to OpenAI's GPT models, ensuring continuous service availability. The response includes a `model_used` field (e.g., `"openai/gpt-3.5-turbo"`) to indicate when fallback was used.
 
 ## Production Deployment
 
