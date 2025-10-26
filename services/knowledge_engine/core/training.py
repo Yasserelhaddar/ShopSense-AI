@@ -365,6 +365,7 @@ class TrainingManager:
 
             return {
                 "content": response.choices[0].message.content,
+                "model_used": f"openai/{response.model}",
                 "tokens_used": response.usage.total_tokens,
                 "processing_time_ms": processing_time
             }

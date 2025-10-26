@@ -294,15 +294,10 @@ async def model_inference(
         HTTPException: If inference fails or model not found
     """
     try:
-        # Validate model exists
-        model = await training_manager.get_model(model_id)
-        if not model:
-            raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
-
         # Convert Pydantic Message objects to dicts
         messages_dict = [msg.dict() for msg in request.messages]
 
-        # Run inference
+        # Run inference (with automatic OpenAI fallback if model not found)
         response = await training_manager.run_inference(
             model_id=model_id,
             messages=messages_dict,
