@@ -37,6 +37,37 @@ logger = get_logger("advisory-service")
 settings = AdvisorySettings()
 
 
+def transform_product_to_schema(product: dict) -> dict:
+    """
+    Transform a product from Discovery Engine format to API schema format.
+
+    Args:
+        product: Product dict from Discovery/Recommendation Engine
+                 (with fields: id, similarity_score, description, etc.)
+
+    Returns:
+        dict: Product in API schema format
+              (with fields: product_id, match_score, why_recommended, etc.)
+    """
+    # Get product ID - warn if missing
+    product_id = product.get("id") or product.get("product_id") or ""
+    if not product_id:
+        logger.warning(f"Product missing ID: {product.get('title', 'Unknown')}")
+
+    return {
+        "product_id": product_id,
+        "title": product.get("title") or "",
+        "price": product.get("price") or 0.0,
+        "store": product.get("store") or "",
+        "rating": product.get("rating"),
+        "image_url": product.get("image_url"),
+        "product_url": product.get("product_url"),
+        "match_score": product.get("similarity_score") or 0.8,
+        "why_recommended": product.get("description") or "Recommended for you",
+        "key_benefits": product.get("key_features", [])[:3] if product.get("key_features") else []
+    }
+
+
 @router.post("/search", response_model=SearchResponse)
 async def ai_powered_search(
     request: Request,
@@ -87,8 +118,11 @@ async def ai_powered_search(
                 )
                 logger.debug(f"Saved search recommendations to history for user {user.user_id}")
 
+        # Transform product results to match schema
+        search_results = [transform_product_to_schema(p) for p in recommendations["products"]]
+
         return SearchResponse(
-            search_results=recommendations["products"],
+            search_results=search_results,
             ai_advice=recommendations["advice"],
             follow_up_questions=recommendations["follow_ups"],
             search_insights=recommendations["insights"],
@@ -174,9 +208,14 @@ async def shopping_consultation(
                 )
                 logger.debug(f"Saved consultation messages to history for user {user.user_id}")
 
+        # Transform product recommendations to match schema
+        product_recommendations = [
+            transform_product_to_schema(p) for p in consultation_result["recommendations"]
+        ]
+
         return AdviceResponse(
             advice=consultation_result["advice"],
-            product_recommendations=consultation_result["recommendations"],
+            product_recommendations=product_recommendations,
             next_steps=consultation_result["next_steps"],
             confidence_score=consultation_result["confidence"],
             reasoning=consultation_result["reasoning"]
@@ -212,21 +251,53 @@ async def compare_products(
     try:
         recommendation_engine = request.app.state.recommendation_engine
 
+        # Extract comparison factors from criteria
+        comparison_factors = comparison_request.comparison_criteria.factors
+
+        # Convert user preferences to dict if provided
+        user_prefs_dict = None
+        if comparison_request.user_preferences:
+            user_prefs_dict = comparison_request.user_preferences.model_dump() if hasattr(comparison_request.user_preferences, 'model_dump') else comparison_request.user_preferences.dict()
+
         # Perform product comparison
         comparison_result = await recommendation_engine.compare_products(
             product_ids=comparison_request.product_ids,
-            comparison_criteria=comparison_request.comparison_criteria,
-            user_preferences=comparison_request.user_preferences
+            comparison_criteria=comparison_factors,
+            user_preferences=user_prefs_dict
         )
 
         logger.info(f"Compared {len(comparison_request.product_ids)} products")
 
+        # Transform products to ProductComparison format
+        product_comparisons = []
+        for product in comparison_result["products"]:
+            product_id = product.get("id", "")
+            strengths_weaknesses = comparison_result["strengths_weaknesses"].get(product_id, {})
+
+            # Transform product to ProductRecommendation schema
+            product_rec = transform_product_to_schema(product)
+
+            product_comparisons.append({
+                "product": product_rec,
+                "scores": {factor: 0.8 for factor in comparison_factors},  # TODO: Calculate actual scores
+                "strengths": strengths_weaknesses.get("strengths", ["High quality"]),
+                "weaknesses": strengths_weaknesses.get("weaknesses", []),
+                "overall_score": 0.8  # TODO: Calculate actual overall score
+            })
+
+        # Transform strengths_weaknesses to schema format
+        strengths_weaknesses_formatted = {}
+        for product_id, analysis in comparison_result["strengths_weaknesses"].items():
+            strengths_weaknesses_formatted[product_id] = (
+                analysis.get("strengths", []) + ["---"] + analysis.get("weaknesses", [])
+            )
+
         return ComparisonResponse(
-            products=comparison_result["products"],
+            products=product_comparisons,
             comparison_matrix=comparison_result["matrix"],
             ai_analysis=comparison_result["analysis"],
             recommendation=comparison_result["recommendation"],
-            strengths_weaknesses=comparison_result["strengths_weaknesses"]
+            strengths_weaknesses=strengths_weaknesses_formatted
         )
 
     except Exception as e:
@@ -256,8 +327,11 @@ async def get_trending_recommendations(request: Request):
 
         logger.info("Retrieved trending recommendations")
 
+        # Transform trending products to match expected schema
+        trending_products = [transform_product_to_schema(p) for p in trending["products"]]
+
         return {
-            "trending_products": trending["products"],
+            "trending_products": trending_products,
             "trending_categories": trending["categories"],
             "seasonal_recommendations": trending["seasonal"],
             "updated_at": trending["updated_at"]
@@ -363,12 +437,17 @@ async def get_my_preferences(request: Request):
 
         logger.info(f"Retrieved preferences for user {user.user_id}")
 
+        # Transform recent recommendations to match schema
+        recent_recommendations = [
+            transform_product_to_schema(p) for p in preferences.get("recent_recommendations", [])
+        ]
+
         return {
             "user_id": user.user_id,
             "email": user.email,
             "preferences": preferences["preferences"],
             "history": preferences["history"],
-            "recommendations": preferences["recent_recommendations"]
+            "recommendations": recent_recommendations
         }
 
     except HTTPException:

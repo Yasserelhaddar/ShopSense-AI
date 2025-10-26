@@ -135,23 +135,66 @@ class RecommendationEngine:
             comparison_criteria=comparison_criteria
         )
 
+        # Generate a specific recommendation based on products
+        recommendation = self._generate_comparison_recommendation(products, comparison_criteria)
+
         return {
             "products": products,
             "matrix": analysis_result.get("comparison_matrix", {}),
             "analysis": analysis_result.get("analysis", ""),
-            "recommendation": "Based on the analysis...",  # TODO: Generate specific recommendation
+            "recommendation": recommendation,
             "strengths_weaknesses": self._analyze_strengths_weaknesses(products)
         }
 
     async def get_trending_recommendations(self) -> Dict[str, Any]:
-        """Get trending product recommendations."""
-        # TODO: Implement trending logic
-        return {
-            "products": [],
-            "categories": ["laptops", "smartphones", "headphones"],
-            "seasonal": [],
-            "updated_at": datetime.utcnow().isoformat()
-        }
+        """
+        Get trending product recommendations.
+
+        Returns:
+            Dictionary with trending products and categories
+        """
+        try:
+            # Define trending search queries
+            trending_queries = ["smartphone", "laptop", "headphones", "smartwatch"]
+            all_products = []
+
+            # Search for each trending category
+            for query in trending_queries:
+                try:
+                    # Discovery client returns a list of products directly
+                    products = await self.discovery_client.search_products(
+                        query=query,
+                        limit=10
+                    )
+                    # Transform products to recommendation format
+                    transformed = self._transform_products_to_recommendations(products, query)
+                    all_products.extend(transformed)
+                except Exception as e:
+                    logger.warning(f"Failed to get trending products for {query}: {e}")
+                    continue
+
+            # Sort by rating and limit to top products
+            sorted_products = sorted(
+                all_products,
+                key=lambda p: (p.get("rating") or 0, p.get("match_score") or 0),
+                reverse=True
+            )[:20]
+
+            return {
+                "products": sorted_products,
+                "categories": trending_queries,
+                "seasonal": [],
+                "updated_at": datetime.utcnow().isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get trending recommendations: {e}")
+            return {
+                "products": [],
+                "categories": ["smartphones", "laptops", "headphones"],
+                "seasonal": [],
+                "updated_at": datetime.utcnow().isoformat()
+            }
 
     async def process_feedback(
         self,
@@ -434,3 +477,50 @@ class RecommendationEngine:
             benefits.append("Quality product")
 
         return benefits[:3]  # Return top 3 benefits
+
+    def _generate_comparison_recommendation(
+        self,
+        products: List[Dict[str, Any]],
+        comparison_criteria: List[str]
+    ) -> str:
+        """
+        Generate a specific recommendation based on product comparison.
+
+        Args:
+            products: List of products being compared
+            comparison_criteria: Criteria used for comparison
+
+        Returns:
+            Recommendation string
+        """
+        if not products:
+            return "Unable to generate recommendation without product data."
+
+        # Find product with highest rating
+        best_rated = max(products, key=lambda p: p.get("rating", 0))
+
+        # Find product with best price
+        cheapest = min(products, key=lambda p: p.get("price", float('inf')))
+
+        # Generate recommendation
+        recommendation_parts = []
+
+        if best_rated.get("rating", 0) >= 4.5:
+            recommendation_parts.append(
+                f"For best quality, we recommend **{best_rated.get('title', 'the top-rated option')}** "
+                f"({best_rated.get('rating', 0):.1f}★ rating)"
+            )
+
+        if "price" in comparison_criteria and cheapest != best_rated:
+            recommendation_parts.append(
+                f"For budget-conscious buyers, **{cheapest.get('title', 'the most affordable option')}** "
+                f"offers great value at ${cheapest.get('price', 0):.2f}"
+            )
+
+        if not recommendation_parts:
+            recommendation_parts.append(
+                f"All options are solid choices. Consider **{best_rated.get('title', products[0].get('title'))}** "
+                "for the best balance of features and value."
+            )
+
+        return " ".join(recommendation_parts)

@@ -49,6 +49,10 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         """Process the request and verify authentication if enabled."""
 
+        # Skip auth for CORS preflight requests (OPTIONS)
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         # Skip auth for health check and docs endpoints
         if request.url.path in ["/health", "/docs", "/openapi.json", "/redoc"]:
             request.state.user = None
