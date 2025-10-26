@@ -87,6 +87,22 @@ export const compareProducts = async (request: ComparisonRequest): Promise<Compa
 }
 
 export const getProductById = async (id: string): Promise<Product> => {
-  const { data } = await discoveryApi.get<Product>(`/products/${id}`)
-  return data
+  const { data } = await discoveryApi.get<any>(`/products/${id}`)
+
+  // Transform backend response to frontend format
+  return {
+    id: data.id,
+    title: data.title,
+    description: data.description || '',
+    price: data.price,
+    originalPrice: data.original_price,
+    image: data.image_url || '/placeholder-image.jpg',
+    rating: data.rating,
+    reviewCount: data.reviews_count,
+    store: data.store,
+    category: data.category,
+    brand: data.brand,
+    inStock: data.availability !== 'out_of_stock',
+    url: data.product_url
+  }
 }

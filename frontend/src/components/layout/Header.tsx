@@ -1,11 +1,14 @@
 import { Link } from 'react-router-dom'
-import { SignedIn, SignedOut, SignInButton } from '@clerk/clerk-react'
+import { SignedIn, SignedOut, SignInButton, useUser } from '@clerk/clerk-react'
 import { UserButton } from '@/components/auth/UserButton'
 import { ROUTES } from '@/lib/constants/routes'
-import { Search, MessageCircle, Settings } from 'lucide-react'
+import { Search, MessageCircle, Settings, Shield } from 'lucide-react'
 import { ComparisonButton } from '@/components/comparison/ComparisonButton'
 
 export function Header() {
+  const { user } = useUser()
+  const isAdmin = user?.publicMetadata?.role === 'admin'
+
   return (
     <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
       <div className="container mx-auto px-4">
@@ -39,6 +42,15 @@ export function Header() {
                 <Settings className="w-4 h-4" />
                 Settings
               </Link>
+              {isAdmin && (
+                <Link
+                  to={ROUTES.ADMIN}
+                  className="flex items-center gap-2 text-sm font-medium text-amber-600 hover:text-amber-700 transition-colors"
+                >
+                  <Shield className="w-4 h-4" />
+                  Admin
+                </Link>
+              )}
             </nav>
           </SignedIn>
 
