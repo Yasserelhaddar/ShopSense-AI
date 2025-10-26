@@ -97,11 +97,33 @@ async def ai_powered_search(
         recommendation_engine = request.app.state.recommendation_engine
         clerk_client = request.app.state.clerk_user_client
 
+        # Get authenticated user and merge saved preferences
+        user = get_current_user(request)
+        budget_range = search_request.budget_range
+        user_preferences = search_request.user_preferences
+
+        if user and clerk_client:
+            # Fetch saved preferences from Clerk
+            saved_prefs = await clerk_client.get_user_preferences(user.user_id)
+
+            # Merge budget_range: request takes precedence, fall back to saved
+            if not budget_range and saved_prefs.get("budget_range"):
+                budget_range = saved_prefs["budget_range"]
+
+            # Merge user_preferences: combine saved with request (request takes precedence)
+            if saved_prefs:
+                merged_prefs = saved_prefs.copy()
+                if user_preferences:
+                    merged_prefs.update(user_preferences)
+                user_preferences = merged_prefs
+
+            logger.debug(f"Applied saved preferences for user {user.user_id}")
+
         # Generate recommendations based on user query and preferences
         recommendations = await recommendation_engine.generate_recommendations(
             query=search_request.query,
-            user_preferences=search_request.user_preferences,
-            budget_range=search_request.budget_range,
+            user_preferences=user_preferences,
+            budget_range=budget_range,
             use_cases=search_request.use_cases
         )
 
@@ -180,10 +202,26 @@ async def shopping_consultation(
             # Use first specific question if no conversation history
             user_question = advice_request.specific_questions[0]
 
+        # Get authenticated user and merge saved preferences into user_context
+        user = get_current_user(request)
+        user_context = advice_request.user_context or {}
+
+        if user and clerk_client:
+            # Fetch saved preferences from Clerk
+            saved_prefs = await clerk_client.get_user_preferences(user.user_id)
+
+            # Merge saved preferences into user_context
+            if saved_prefs:
+                merged_context = saved_prefs.copy()
+                merged_context.update(user_context)
+                user_context = merged_context
+
+            logger.debug(f"Applied saved preferences to consultation for user {user.user_id}")
+
         # Generate consultation response
         consultation_result = await consultation_engine.provide_consultation(
             conversation_history=advice_request.conversation_history,
-            user_context=advice_request.user_context,
+            user_context=user_context,
             specific_questions=advice_request.specific_questions
         )
 
@@ -250,6 +288,7 @@ async def compare_products(
     """
     try:
         recommendation_engine = request.app.state.recommendation_engine
+        clerk_client = request.app.state.clerk_user_client
 
         # Extract comparison factors from criteria
         comparison_factors = comparison_request.comparison_criteria.factors
@@ -258,6 +297,21 @@ async def compare_products(
         user_prefs_dict = None
         if comparison_request.user_preferences:
             user_prefs_dict = comparison_request.user_preferences.model_dump() if hasattr(comparison_request.user_preferences, 'model_dump') else comparison_request.user_preferences.dict()
+
+        # Get authenticated user and merge saved preferences
+        user = get_current_user(request)
+        if user and clerk_client:
+            # Fetch saved preferences from Clerk
+            saved_prefs = await clerk_client.get_user_preferences(user.user_id)
+
+            # Merge user_preferences: combine saved with request (request takes precedence)
+            if saved_prefs:
+                merged_prefs = saved_prefs.copy()
+                if user_prefs_dict:
+                    merged_prefs.update(user_prefs_dict)
+                user_prefs_dict = merged_prefs
+
+            logger.debug(f"Applied saved preferences to comparison for user {user.user_id}")
 
         # Perform product comparison
         comparison_result = await recommendation_engine.compare_products(
